@@ -1,0 +1,142 @@
+[
+  {
+    "dataset_name": "sroie_heldout",
+    "image_id": "sroie_ho_030",
+    "image_path": "datasets/sroie/ICDAR-2019-SROIE-master/data/img/030.jpg",
+    "ground_truth_path": "datasets/sroie/gt_heldout/030.json",
+    "split": "heldout_merchant_disjoint"
+  },
+  {
+    "dataset_name": "sroie_heldout",
+    "image_id": "sroie_ho_031",
+    "image_path": "datasets/sroie/ICDAR-2019-SROIE-master/data/img/031.jpg",
+    "ground_truth_path": "datasets/sroie/gt_heldout/031.json",
+    "split": "heldout_merchant_disjoint"
+  },
+  {
+    "dataset_name": "sroie_heldout",
+    "image_id": "sroie_ho_037",
+    "image_path": "datasets/sroie/ICDAR-2019-SROIE-master/data/img/037.jpg",
+    "ground_truth_path": "datasets/sroie/gt_heldout/037.json",
+    "split": "heldout_merchant_disjoint"
+  },
+  {
+    "dataset_name": "sroie_heldout",
+    "image_id": "sroie_ho_038",
+    "image_path": "datasets/sroie/ICDAR-2019-SROIE-master/data/img/038.jpg",
+    "ground_truth_path": "datasets/sroie/gt_heldout/038.json",
+    "split": "heldout_merchant_disjoint"
+  },
+  {
+    "dataset_name": "sroie_heldout",
+    "image_id": "sroie_ho_039",
+    "image_path": "datasets/sroie/ICDAR-2019-SROIE-master/data/img/039.jpg",
+    "ground_truth_path": "datasets/sroie/gt_heldout/039.json",
+    "split": "heldout_merchant_disjoint"
+  },
+  {
+    "dataset_name": "sroie_heldout",
+    "image_id": "sroie_ho_040",
+    "image_path": "datasets/sroie/ICDAR-2019-SROIE-master/data/img/040.jpg",
+    "ground_truth_path": "datasets/sroie/gt_heldout/040.json",
+    "split": "heldout_merchant_disjoint"
+  },
+  {
+    "dataset_name": "sroie_heldout",
+    "image_id": "sroie_ho_042",
+    "image_path": "datasets/sroie/ICDAR-2019-SROIE-master/data/img/042.jpg",
+    "ground_truth_path": "datasets/sroie/gt_heldout/042.json",
+    "split": "heldout_merchant_disjoint"
+  },
+  {
+    "dataset_name": "sroie_heldout",
+    "image_id": "sroie_ho_043",
+    "image_path": "datasets/sroie/ICDAR-2019-SROIE-master/data/img/043.jpg",
+    "ground_truth_path": "datasets/sroie/gt_heldout/043.json",
+    "split": "heldout_merchant_disjoint"
+  },
+  {
+    "dataset_name": "sroie_heldout",
+    "image_id": "sroie_ho_046",
+    "image_path": "datasets/sroie/ICDAR-2019-SROIE-master/data/img/046.jpg",
+    "ground_truth_path": "datasets/sroie/gt_heldout/046.json",
+    "split": "heldout_merchant_disjoint"
+  },
+  {
+    "dataset_name": "sroie_heldout",
+    "image_id": "sroie_ho_047",
+    "image_path": "datasets/sroie/ICDAR-2019-SROIE-master/data/img/047.jpg",
+    "ground_truth_path": "datasets/sroie/gt_heldout/047.json",
+    "split": "heldout_merchant_disjoint"
+  },
+  {
+    "dataset_name": "sroie_heldout",
+    "image_id": "sroie_ho_048",
+    "image_path": "datasets/sroie/ICDAR-2019-SROIE-master/data/img/048.jpg",
+    "ground_truth_path": "datasets/sroie/gt_heldout/048.json",
+    "split": "heldout_merchant_disjoint"
+  },
+  {
+    "dataset_name": "sroie_heldout",
+    "image_id": "sroie_ho_050",
+    "image_path": "datasets/sroie/ICDAR-2019-SROIE-master/data/img/050.jpg",
+    "ground_truth_path": "datasets/sroie/gt_heldout/050.json",
+    "split": "heldout_merchant_disjoint"
+  },
+  {
+    "dataset_name": "sroie_heldout",
+    "image_id": "sroie_ho_052",
+    "image_path": "datasets/sroie/ICDAR-2019-SROIE-master/data/img/052.jpg",
+    "ground_truth_path": "datasets/sroie/gt_heldout/052.json",
+    "split": "heldout_merchant_disjoint"
+  },
+  {
+    "dataset_name": "sroie_heldout",
+    "image_id": "sroie_ho_054",
+    "image_path": "datasets/sroie/ICDAR-2019-SROIE-master/data/img/054.jpg",
+    "ground_truth_path": "datasets/sroie/gt_heldout/054.json",
+    "split": "heldout_merchant_disjoint"
+  },
+  {
+    "dataset_name": "sroie_heldout",
+    "image_id": "sroie_ho_059",
+    "image_path": "datasets/sroie/ICDAR-2019-SROIE-master/data/img/059.jpg",
+    "ground_truth_path": "datasets/sroie/gt_heldout/059.json",
+    "split": "heldout_merchant_disjoint"
+  },
+  {
+    "dataset_name": "sroie_heldout",
+    "image_id": "sroie_ho_060",
+    "image_path": "datasets/sroie/ICDAR-2019-SROIE-master/data/img/060.jpg",
+    "ground_truth_path": "datasets/sroie/gt_heldout/060.json",
+    "split": "heldout_merchant_disjoint"
+  },
+  {
+    "dataset_name": "sroie_heldout",
+    "image_id": "sroie_ho_061",
+    "image_path": "datasets/sroie/ICDAR-2019-SROIE-master/data/img/061.jpg",
+    "ground_truth_path": "datasets/sroie/gt_heldout/061.json",
+    "split": "heldout_merchant_disjoint"
+  },
+  {
+    "dataset_name": "sroie_heldout",
+    "image_id": "sroie_ho_063",
+    "image_path": "datasets/sroie/ICDAR-2019-SROIE-master/data/img/063.jpg",
+    "ground_truth_path": "datasets/sroie/gt_heldout/063.json",
+    "split": "heldout_merchant_disjoint"
+  },
+  {
+    "dataset_name": "sroie_heldout",
+    "image_id": "sroie_ho_064",
+    "image_path": "datasets/sroie/ICDAR-2019-SROIE-master/data/img/064.jpg",
+    "ground_truth_path": "datasets/sroie/gt_heldout/064.json",
+    "split": "heldout_merchant_disjoint"
+  },
+  {
+    "dataset_name": "sroie_heldout",
+    "image_id": "sroie_ho_065",
+    "image_path": "datasets/sroie/ICDAR-2019-SROIE-master/data/img/065.jpg",
+    "ground_truth_path": "datasets/sroie/gt_heldout/065.json",
+    "split": "heldout_merchant_disjoint"
+  }
+]

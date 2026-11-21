@@ -1,0 +1,69 @@
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+
+# Certificates and credentials
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+service-account*.json
+secrets/
+
+# Local databases and database backups (do not use blanket *.sql)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.sqlite*
+*.dump
+*.sql.bak
+*.sql.gz
+backend/backups/
+database/backups/
+backups/
+
+# Development artifacts
+.venv/
+backend/.venv/
+venv/
+node_modules/
+mobile/node_modules/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.DS_Store
+*.log
+*.tmp
+*.bak
+*.bak_*
+*.bak*
+
+# Node / Expo / Mobile
+mobile/.expo/
+mobile/dist/
+mobile/web-build/
+.expo/
+
+# Private/local documentation
+docs/private/
+docs/personal/
+docs/local/
+docs/secrets/
+docs/**/private-notes.md
+docs/**/local-notes.md
+
+# Alembic migrations
+backend/alembic/
+backend/alembic.ini
+
+# Receipt OCR benchmark directories
+receipt_ocr_benchmark/datasets/
+receipt_ocr_benchmark/outputs/
+receipt_ocr_benchmark/reports/
+receipt_ocr_benchmark/scripts/

@@ -1,0 +1,452 @@
+[
+  {
+    "name": "Milk",
+    "normalized_name": "milk",
+    "category": "dairy",
+    "subcategory": "milk_and_dairy",
+    "standard_unit": "ml",
+    "cooking_variants": ["whole", "full_cream", "toned", "double_toned", "skim"],
+    "supported_units": ["ml", "l"]
+  },
+  {
+    "name": "Curd",
+    "normalized_name": "curd",
+    "category": "dairy",
+    "subcategory": "fermented_dairy",
+    "standard_unit": "g",
+    "cooking_variants": ["plain", "set_curd", "greek_yogurt"],
+    "supported_units": ["g", "kg", "ml", "l"]
+  },
+  {
+    "name": "Paneer",
+    "normalized_name": "paneer",
+    "category": "dairy",
+    "subcategory": "cheese",
+    "standard_unit": "g",
+    "cooking_variants": ["fresh", "malai", "low_fat"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Butter",
+    "normalized_name": "butter",
+    "category": "dairy",
+    "subcategory": "fat_spread",
+    "standard_unit": "g",
+    "cooking_variants": ["salted", "unsalted", "white_butter"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Cheese",
+    "normalized_name": "cheese",
+    "category": "dairy",
+    "subcategory": "cheese",
+    "standard_unit": "g",
+    "cooking_variants": ["cheddar", "mozzarella", "processed"],
+    "supported_units": ["g", "kg", "pcs"]
+  },
+  {
+    "name": "Basmati Rice",
+    "normalized_name": "basmati_rice",
+    "category": "grain",
+    "subcategory": "rice",
+    "standard_unit": "g",
+    "cooking_variants": ["long_grain", "aged", "brown_basmati"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Sona Masoori Rice",
+    "normalized_name": "sona_masoori_rice",
+    "category": "grain",
+    "subcategory": "rice",
+    "standard_unit": "g",
+    "cooking_variants": ["raw", "steam", "boiled"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Idli Rice",
+    "normalized_name": "idli_rice",
+    "category": "grain",
+    "subcategory": "rice",
+    "standard_unit": "g",
+    "cooking_variants": ["parboiled", "short_grain"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Whole Wheat Flour (Atta)",
+    "normalized_name": "whole_wheat_flour",
+    "category": "grain",
+    "subcategory": "flour",
+    "standard_unit": "g",
+    "cooking_variants": ["chakki_atta", "multigrain_atta"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Semolina (Rava / Sooji)",
+    "normalized_name": "semolina",
+    "category": "grain",
+    "subcategory": "flour",
+    "standard_unit": "g",
+    "cooking_variants": ["fine", "coarse", "bansi_rava"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Rolled Oats",
+    "normalized_name": "rolled_oats",
+    "category": "grain",
+    "subcategory": "cereal",
+    "standard_unit": "g",
+    "cooking_variants": ["rolled", "quick_oats", "steel_cut"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Toor Dal",
+    "normalized_name": "toor_dal",
+    "category": "pulse",
+    "subcategory": "split_lentil",
+    "standard_unit": "g",
+    "cooking_variants": ["unpolished", "polished"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Moong Dal",
+    "normalized_name": "moong_dal",
+    "category": "pulse",
+    "subcategory": "split_lentil",
+    "standard_unit": "g",
+    "cooking_variants": ["yellow_split", "whole_green", "chilka"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Chana Dal",
+    "normalized_name": "chana_dal",
+    "category": "pulse",
+    "subcategory": "split_lentil",
+    "standard_unit": "g",
+    "cooking_variants": ["split_bengal_gram"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Urad Dal",
+    "normalized_name": "urad_dal",
+    "category": "pulse",
+    "subcategory": "split_lentil",
+    "standard_unit": "g",
+    "cooking_variants": ["white_gota", "split_black"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Chickpeas (Kabuli Chana)",
+    "normalized_name": "chickpeas",
+    "category": "pulse",
+    "subcategory": "whole_legume",
+    "standard_unit": "g",
+    "cooking_variants": ["kabuli", "kala_chana"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Onion",
+    "normalized_name": "onion",
+    "category": "vegetable",
+    "subcategory": "allium",
+    "standard_unit": "g",
+    "cooking_variants": ["red_onion", "sambar_onion", "white_onion"],
+    "supported_units": ["g", "kg", "pcs"]
+  },
+  {
+    "name": "Tomato",
+    "normalized_name": "tomato",
+    "category": "vegetable",
+    "subcategory": "nightshade",
+    "standard_unit": "g",
+    "cooking_variants": ["hybrid", "nattu_desi", "cherry"],
+    "supported_units": ["g", "kg", "pcs"]
+  },
+  {
+    "name": "Potato",
+    "normalized_name": "potato",
+    "category": "vegetable",
+    "subcategory": "root_tuber",
+    "standard_unit": "g",
+    "cooking_variants": ["regular", "baby_potato"],
+    "supported_units": ["g", "kg", "pcs"]
+  },
+  {
+    "name": "Garlic",
+    "normalized_name": "garlic",
+    "category": "vegetable",
+    "subcategory": "allium",
+    "standard_unit": "g",
+    "cooking_variants": ["regular", "peeled"],
+    "supported_units": ["g", "kg", "pcs"]
+  },
+  {
+    "name": "Ginger",
+    "normalized_name": "ginger",
+    "category": "vegetable",
+    "subcategory": "root_tuber",
+    "standard_unit": "g",
+    "cooking_variants": ["fresh_root"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Spinach (Palak)",
+    "normalized_name": "spinach",
+    "category": "vegetable",
+    "subcategory": "leafy_green",
+    "standard_unit": "g",
+    "cooking_variants": ["palak", "baby_spinach"],
+    "supported_units": ["g", "kg", "pcs"]
+  },
+  {
+    "name": "Banana",
+    "normalized_name": "banana",
+    "category": "fruit",
+    "subcategory": "tropical",
+    "standard_unit": "pcs",
+    "cooking_variants": ["robusta", "yelakki", "nendran"],
+    "supported_units": ["pcs", "g", "kg"]
+  },
+  {
+    "name": "Apple",
+    "normalized_name": "apple",
+    "category": "fruit",
+    "subcategory": "pome",
+    "standard_unit": "g",
+    "cooking_variants": ["shimla", "fuji", "washington"],
+    "supported_units": ["g", "kg", "pcs"]
+  },
+  {
+    "name": "Lemon",
+    "normalized_name": "lemon",
+    "category": "fruit",
+    "subcategory": "citrus",
+    "standard_unit": "pcs",
+    "cooking_variants": ["nimbu", "lime"],
+    "supported_units": ["pcs", "g", "kg"]
+  },
+  {
+    "name": "Mango",
+    "normalized_name": "mango",
+    "category": "fruit",
+    "subcategory": "tropical",
+    "standard_unit": "g",
+    "cooking_variants": ["alphonso", "banganapalli", "kesar"],
+    "supported_units": ["g", "kg", "pcs"]
+  },
+  {
+    "name": "Pomegranate",
+    "normalized_name": "pomegranate",
+    "category": "fruit",
+    "subcategory": "berry_aril",
+    "standard_unit": "g",
+    "cooking_variants": ["bhagwa", "arils"],
+    "supported_units": ["g", "kg", "pcs"]
+  },
+  {
+    "name": "Sunflower Oil",
+    "normalized_name": "sunflower_oil",
+    "category": "oil",
+    "subcategory": "cooking_oil",
+    "standard_unit": "ml",
+    "cooking_variants": ["refined", "cold_pressed"],
+    "supported_units": ["ml", "l"]
+  },
+  {
+    "name": "Mustard Oil",
+    "normalized_name": "mustard_oil",
+    "category": "oil",
+    "subcategory": "cooking_oil",
+    "standard_unit": "ml",
+    "cooking_variants": ["kachi_ghani", "cold_pressed"],
+    "supported_units": ["ml", "l"]
+  },
+  {
+    "name": "Coconut Oil",
+    "normalized_name": "coconut_oil",
+    "category": "oil",
+    "subcategory": "cooking_oil",
+    "standard_unit": "ml",
+    "cooking_variants": ["virgin", "cold_pressed", "filtered"],
+    "supported_units": ["ml", "l"]
+  },
+  {
+    "name": "Rice Bran Oil",
+    "normalized_name": "rice_bran_oil",
+    "category": "oil",
+    "subcategory": "cooking_oil",
+    "standard_unit": "ml",
+    "cooking_variants": ["refined"],
+    "supported_units": ["ml", "l"]
+  },
+  {
+    "name": "Ghee",
+    "normalized_name": "ghee",
+    "category": "oil",
+    "subcategory": "clarified_butter",
+    "standard_unit": "ml",
+    "cooking_variants": ["cow_ghee", "buffalo_ghee", "a2_ghee"],
+    "supported_units": ["ml", "l", "g", "kg"]
+  },
+  {
+    "name": "Turmeric Powder",
+    "normalized_name": "turmeric_powder",
+    "category": "spice",
+    "subcategory": "ground_spice",
+    "standard_unit": "g",
+    "cooking_variants": ["haldi", "lakadong"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Cumin Seeds (Jeera)",
+    "normalized_name": "cumin_seeds",
+    "category": "spice",
+    "subcategory": "whole_spice",
+    "standard_unit": "g",
+    "cooking_variants": ["whole", "shahi_jeera"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Red Chilli Powder",
+    "normalized_name": "red_chilli_powder",
+    "category": "spice",
+    "subcategory": "ground_spice",
+    "standard_unit": "g",
+    "cooking_variants": ["kashmiri", "guntur", "teja"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Coriander Powder",
+    "normalized_name": "coriander_powder",
+    "category": "spice",
+    "subcategory": "ground_spice",
+    "standard_unit": "g",
+    "cooking_variants": ["dhania_powder"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Mustard Seeds (Rai)",
+    "normalized_name": "mustard_seeds",
+    "category": "spice",
+    "subcategory": "whole_spice",
+    "standard_unit": "g",
+    "cooking_variants": ["black", "yellow"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Garam Masala",
+    "normalized_name": "garam_masala",
+    "category": "spice",
+    "subcategory": "spice_blend",
+    "standard_unit": "g",
+    "cooking_variants": ["classic", "punjabi"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Almonds",
+    "normalized_name": "almonds",
+    "category": "nut",
+    "subcategory": "tree_nut",
+    "standard_unit": "g",
+    "cooking_variants": ["california", "mamra"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Cashews",
+    "normalized_name": "cashews",
+    "category": "nut",
+    "subcategory": "tree_nut",
+    "standard_unit": "g",
+    "cooking_variants": ["whole_w320", "split", "tukda"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Peanuts",
+    "normalized_name": "peanuts",
+    "category": "nut",
+    "subcategory": "legume_nut",
+    "standard_unit": "g",
+    "cooking_variants": ["raw", "roasted"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Sesame Seeds (Til)",
+    "normalized_name": "sesame_seeds",
+    "category": "nut",
+    "subcategory": "seed",
+    "standard_unit": "g",
+    "cooking_variants": ["white", "black"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Flax Seeds",
+    "normalized_name": "flax_seeds",
+    "category": "nut",
+    "subcategory": "seed",
+    "standard_unit": "g",
+    "cooking_variants": ["raw", "roasted"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Walnuts",
+    "normalized_name": "walnuts",
+    "category": "nut",
+    "subcategory": "tree_nut",
+    "standard_unit": "g",
+    "cooking_variants": ["kernels", "inshell"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Sugar",
+    "normalized_name": "sugar",
+    "category": "packaged_grocery",
+    "subcategory": "sweetener",
+    "standard_unit": "g",
+    "cooking_variants": ["white", "desi_fine", "brown"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Rice Flour",
+    "normalized_name": "rice_flour",
+    "category": "grain",
+    "subcategory": "flour",
+    "standard_unit": "g",
+    "cooking_variants": ["fine", "idiyappam"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Coconut Milk",
+    "normalized_name": "coconut_milk",
+    "category": "packaged_grocery",
+    "subcategory": "plant_milk",
+    "standard_unit": "ml",
+    "cooking_variants": ["thick", "light"],
+    "supported_units": ["ml", "l"]
+  },
+  {
+    "name": "Tomato Puree",
+    "normalized_name": "tomato_puree",
+    "category": "packaged_grocery",
+    "subcategory": "tomato_processed",
+    "standard_unit": "g",
+    "cooking_variants": ["plain"],
+    "supported_units": ["g", "kg", "ml"]
+  },
+  {
+    "name": "Coriander Seeds",
+    "normalized_name": "coriander_seeds",
+    "category": "spice",
+    "subcategory": "whole_spice",
+    "standard_unit": "g",
+    "cooking_variants": ["whole"],
+    "supported_units": ["g", "kg"]
+  },
+  {
+    "name": "Ginger Powder",
+    "normalized_name": "ginger_powder",
+    "category": "spice",
+    "subcategory": "ground_spice",
+    "standard_unit": "g",
+    "cooking_variants": ["dry_ginger", "sonth"],
+    "supported_units": ["g", "kg"]
+  }
+]
