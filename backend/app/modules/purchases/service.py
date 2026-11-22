@@ -540,7 +540,8 @@ async def _build_ocr_purchase_items(
             )
         line_total_paise = max(0, int(line_total_paise))
 
-        unit_price_paise = _extract_attr(raw_item, "unit_price_paise")
+        explicit_unit_price_paise = _extract_attr(raw_item, "unit_price_paise")
+        unit_price_paise = explicit_unit_price_paise
         if unit_price_paise is None:
             qty_float = float(norm_qty)
             unit_price_paise = (
@@ -579,11 +580,16 @@ async def _build_ocr_purchase_items(
 
         from app.modules.catalog.measurement_service import validate_receipt_quantity_against_price
 
+        qty_price_unit_paise = (
+            max(0, int(explicit_unit_price_paise))
+            if explicit_unit_price_paise is not None
+            else 0
+        )
         qty_price_check = validate_receipt_quantity_against_price(
             normalized_qty=norm_qty,
             base_unit=base_unit,
             raw_unit=raw_unit,
-            unit_price_paise=max(0, int(unit_price_paise)),
+            unit_price_paise=qty_price_unit_paise,
             line_total_paise=line_total_paise,
         )
 
@@ -608,7 +614,7 @@ async def _build_ocr_purchase_items(
             base_unit=base_unit,
             raw_unit=raw_unit,
             raw_qty=Decimal(str(raw_qty)) if raw_qty is not None else None,
-            unit_price_paise=max(0, int(unit_price_paise)),
+            unit_price_paise=qty_price_unit_paise,
             line_total_paise=line_total_paise,
             discount_paise=max(0, int(_extract_attr(raw_item, "discount_paise") or 0)),
             tax_paise=max(0, int(line_tax_paise or 0)),
@@ -619,14 +625,10 @@ async def _build_ocr_purchase_items(
             ),
             classification_status=cls_res.classification_status,
         )
-        effective_display_name = (
-            draft_res.standardized_name
-            if draft_res.standardized_name
-            and draft_res.ingredient_confidence_tier in {"HIGH", "MEDIUM"}
-            else display_name
-        )
+        effective_display_name = display_name
         if (
             draft_res.ingredient_confidence_tier == "HIGH"
+            and qty_price_check.is_valid
             and cls_res.classification_status not in {"non_food", "prepared_meal"}
             and not (idx < len(item_track_flags) and not item_track_flags[idx])
         ):
@@ -670,9 +672,7 @@ async def _build_ocr_purchase_items(
             ),
             classification_confidence=Decimal(str(round(cls_res.confidence, 3))),
             matching_method=cls_res.matching_method,
-            resolution_method=draft_res.ingredient_match_source,
             resolution_score=draft_res.raw_confidence_decimal,
-            resolution_status=draft_res.ingredient_confidence_tier,
             resolution_metadata_json=draft_res.to_metadata_dict(),
             classification_source=cls_res.source,
             expires_on=expires_on,
@@ -987,6 +987,7 @@ async def create_manual_draft(
         )
         if (
             draft_res.ingredient_confidence_tier == "HIGH"
+            and (qty_price_check.is_valid or item_in.classification_source == "user_override")
             and bool(item_in.track_inventory)
             and cls_res.classification_status not in {"non_food", "prepared_meal"}
         ):
@@ -997,12 +998,7 @@ async def create_manual_draft(
             line_index=idx,
             raw_text=item_in.raw_text or item_in.display_name,
             canonical_item_id=canonical_id,
-            display_name=(
-                draft_res.standardized_name
-                if draft_res.standardized_name
-                and draft_res.ingredient_confidence_tier in {"HIGH", "MEDIUM"}
-                else item_in.display_name.strip()
-            ),
+            display_name=item_in.display_name.strip(),
             normalized_name=item_in.normalized_name
             or cls_res.normalized_name
             or item_in.display_name.strip().lower(),
@@ -1023,9 +1019,7 @@ async def create_manual_draft(
             budget_treatment=cls_res.budget_treatment,
             classification_confidence=Decimal(str(round(cls_res.confidence, 3))),
             matching_method=cls_res.matching_method,
-            resolution_method=draft_res.ingredient_match_source,
             resolution_score=draft_res.raw_confidence_decimal,
-            resolution_status=draft_res.ingredient_confidence_tier,
             resolution_metadata_json=draft_res.to_metadata_dict(),
             classification_source=cls_res.source,
             expires_on=item_in.expires_on,
@@ -1451,9 +1445,7 @@ async def update_draft(
                 budget_treatment=safe_budget,
                 classification_confidence=Decimal(str(round(cls_res.confidence, 3))),
                 matching_method=cls_res.matching_method,
-                resolution_method=draft_res.ingredient_match_source,
                 resolution_score=draft_res.raw_confidence_decimal,
-                resolution_status=draft_res.ingredient_confidence_tier,
                 resolution_metadata_json=draft_res.to_metadata_dict(),
                 classification_source=safe_source,
                 expires_on=item_in.expires_on,

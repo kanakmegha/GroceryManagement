@@ -289,3 +289,113 @@ async def test_phase5a_soft_merge_chana_bal_potato_groups_and_isolation(
     assert ph.status_code == 200
 
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_phase1_qty_price_safeguards_and_fresh_tom_pkt_regression(
+    client: httpx.AsyncClient,
+    jwks_provider: EphemeralJWKSProvider,
+) -> None:
+    """Regression coverage for Failure #9 (HIGH confidence must not bypass qty/price check)
+    and Failure #2 (Fresh Tom Pkt 500g must remain pantry_eligible without false mismatch).
+    """
+    token = jwks_provider.make_token(sub="user_p1_reg", email="p1reg@example.com", name="P1Reg")
+    hdr = {"Authorization": f"Bearer {token}"}
+    me = await client.get("/api/v1/auth/me", headers=hdr)
+    assert me.status_code == 200
+    hdr["X-Household-Id"] = me.json()["active_household"]["id"]
+
+    # 1. Manual draft: valid HIGH-confidence, invalid HIGH-confidence, valid MEDIUM-confidence
+    m_res = await client.post(
+        "/api/v1/purchases",
+        headers=hdr,
+        json={
+            "merchant_name": "Test Kirana",
+            "purchased_on": "2026-11-22",
+            "items": [
+                {
+                    "display_name": "Basmati Rice",
+                    "category": "grain",
+                    "qty": 1,
+                    "unit": "kg",
+                    "unit_price_paise": 12000,
+                    "line_total_paise": 12000,
+                    "track_inventory": True,
+                },
+                {
+                    "display_name": "Chana Dal",
+                    "category": "pulse",
+                    "qty": 5000000,
+                    "unit": "g",
+                    "unit_price_paise": 4000,
+                    "line_total_paise": 20000,
+                    "track_inventory": True,
+                },
+                {
+                    "display_name": "Whole Wheat",
+                    "category": "grain",
+                    "qty": 500,
+                    "unit": "g",
+                    "unit_price_paise": 5000,
+                    "line_total_paise": 2500,
+                    "track_inventory": True,
+                },
+            ],
+            "total_amount_paise": 34500,
+        },
+    )
+    assert m_res.status_code == 201
+    m_items = m_res.json()["items"]
+    assert m_items[0]["track_inventory"] is True
+    assert m_items[1]["track_inventory"] is False
+    assert m_items[2]["ingredient_confidence_tier"] != "HIGH"
+    assert m_items[2]["track_inventory"] is True
+
+    m_conf = await client.post(
+        f"/api/v1/purchases/{m_res.json()['id']}/confirm", headers=hdr, json={}
+    )
+    assert m_conf.status_code == 200
+    # Invalid Chana Dal (1,000x mismatch) must NOT enter confirmed inventory
+    inv_sum = (await client.get("/api/v1/inventory/summary", headers=hdr)).json()["items"]
+    lot_names = {it["name"] for it in inv_sum}
+    assert "Basmati Rice" in lot_names
+    assert "Whole Wheat" in lot_names
+    assert "Chana Dal" not in lot_names
+
+    # 2. OCR draft: invalid qty/price on HIGH-confidence item + exact Fresh Tom Pkt 500g line
+    ocr_res = await client.post(
+        "/api/v1/purchases/ocr",
+        headers=hdr,
+        json={
+            "raw_text": (
+                "SUPER MART\n"
+                "Fresh Tom Pkt 500g 1 x 30.00 30.00\n"
+                "Total: 30.00\n"
+            )
+        },
+    )
+    assert ocr_res.status_code == 201
+    tom_item = ocr_res.json()["items"][0]
+    assert tom_item["classification_status"] == "pantry_eligible"
+    assert tom_item["track_inventory"] is True
+
+    ocr_bad = await client.post(
+        "/api/v1/purchases/ocr",
+        headers=hdr,
+        json={
+            "raw_text": (
+                "SUPER MART\n"
+                "Turmeric Powder 5000 kg 40.00 200.00\n"
+                "Total: 200.00\n"
+            )
+        },
+    )
+    assert ocr_bad.status_code == 201
+    assert ocr_bad.json()["items"][0]["track_inventory"] is False
+    ocr_bad_conf = await client.post(
+        f"/api/v1/purchases/drafts/{ocr_bad.json()['id']}/confirm",
+        headers={**hdr, "Idempotency-Key": "k-ocr-bad-1"},
+        json={},
+    )
+    assert ocr_bad_conf.status_code == 200
+    assert ocr_bad_conf.json()["created_lots"] == []

@@ -151,9 +151,9 @@ FORM_DISTINCTION_PAIRS: list[tuple[str, str]] = [
 # 15 brand/product-to-ingredient mapping examples: (product_name, category, base_unit,
 # expected_ing_norm)
 BRAND_PRODUCT_CASES: list[tuple[str, str, str, str]] = [
-    ("Aavin Full Cream Milk 500ml", "dairy", "ml", "milk"),
+    ("Aavin Full Cream Milk 500ml", "dairy", "ml", "full_cream_milk"),
     ("Amul Gold Milk 1L", "dairy", "ml", "milk"),
-    ("Nandini Toned Milk 500ml", "dairy", "ml", "milk"),
+    ("Nandini Toned Milk 500ml", "dairy", "ml", "toned_milk"),
     ("India Gate Basmati Rice 5kg", "grain", "g", "basmati_rice"),
     ("Daawat Basmati Rice 1kg", "grain", "g", "basmati_rice"),
     ("Udhaiyam Urad Dal 1kg", "pulse", "g", "urad_dal"),

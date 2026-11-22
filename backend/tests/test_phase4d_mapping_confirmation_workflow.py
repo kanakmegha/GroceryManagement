@@ -296,10 +296,10 @@ async def test_phase4d1_all_six_high_suggestions_and_rejection_loop_safety(
         # MEDIUM and LOW items must NOT be auto-confirmed
         med_apple = CanonicalItem(
             household_id=hh_id,
-            slug="mported-daily-apple",
-            name="mported Daily Apple (Sebu) R$",
-            category="produce",
-            default_base_unit="pcs",
+            slug="whole-wheat-medium",
+            name="Whole Wheat",
+            category="grain",
+            default_base_unit="g",
         )
         low_snack = CanonicalItem(
             household_id=hh_id,

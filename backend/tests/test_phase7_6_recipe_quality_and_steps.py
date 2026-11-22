@@ -74,7 +74,7 @@ async def test_phase7_6_recommendations_and_ai_recipe_validation_and_cooked_feed
         await sync_catalogue_to_db(db)
 
     sub = f"p76-{uuid.uuid4().hex[:8]}"
-    token = jwks_provider.make_token(sub=sub, email=f"{sub}@example.com")
+    token = jwks_provider.make_token(sub=sub, email=f"{sub}@example.com", exp_offset=3600)
     headers = {"Authorization": f"Bearer {token}"}
     me = await client.get("/api/v1/auth/me", headers=headers)
     assert me.status_code == 200

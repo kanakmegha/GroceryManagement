@@ -64,7 +64,9 @@ async def test_phase6_contextual_recommendations_pantry_grounding_and_preference
     """Covers morning/lunch/snack/dinner API responses, confirmed vs unconfirmed mappings, expired
     exclusion, diversity, and empty state.
     """
-    token = jwks_provider.make_token(sub="user_p6", email="p6@example.com", name="P6 User")
+    token = jwks_provider.make_token(
+        sub="user_p6", email="p6@example.com", name="P6 User", exp_offset=3600
+    )
     hdr = {"Authorization": f"Bearer {token}"}
     me = await client.get("/api/v1/auth/me", headers=hdr)
     assert me.status_code == 200

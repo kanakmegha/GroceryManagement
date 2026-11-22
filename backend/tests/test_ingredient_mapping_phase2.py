@@ -38,8 +38,8 @@ async def test_brand_agnostic_mapping_and_phase5_identity_distinctions(
         )
         amul_gold = CanonicalItem(
             household_id=hh.id,
-            slug="amul-gold-milk-1l",
-            name="Amul Gold Milk 1L",
+            slug="amul-gold-fc-milk-1l",
+            name="Amul Gold Full Cream Milk 1L",
             category="dairy",
             default_base_unit="ml",
         )
@@ -126,11 +126,12 @@ async def test_brand_agnostic_mapping_and_phase5_identity_distinctions(
         )
         assert res_aavin.suggested_ingredient is not None
         assert res_amul_gold.suggested_ingredient is not None
-        assert res_aavin.suggested_ingredient.normalized_name == "milk"
-        assert res_amul_gold.suggested_ingredient.normalized_name == "milk"
+        assert res_aavin.suggested_ingredient.normalized_name == "full_cream_milk"
+        assert res_amul_gold.suggested_ingredient.normalized_name == "full_cream_milk"
         assert res_aavin.suggested_ingredient.id == res_amul_gold.suggested_ingredient.id
-        assert res_aavin.detected_variant == "full_cream"
-        assert res_toned.detected_variant == "toned"
+        assert res_toned.suggested_ingredient is not None
+        assert res_toned.suggested_ingredient.normalized_name == "toned_milk"
+        assert res_aavin.suggested_ingredient.id != res_toned.suggested_ingredient.id
 
         res_basmati = await resolve_or_suggest_mapping(
             db, household_id=hh.id, canonical_item=basmati
@@ -302,7 +303,7 @@ async def test_receipt_confirmation_integration_and_price_history_separation(
     c1_body = c1.json()
     assert len(c1_body["created_lots"]) == 1
     assert len(c1_body["ingredient_mappings"]) == 1
-    assert c1_body["ingredient_mappings"][0]["canonical_ingredient_name"] == "Milk"
+    assert c1_body["ingredient_mappings"][0]["canonical_ingredient_name"] == "Full Cream Milk"
     assert c1_body["ingredient_mappings"][0]["status"] == "auto_mapped"
     aavin_item_id = c1_body["created_lots"][0]["canonical_item_id"]
     milk_ing_id = c1_body["ingredient_mappings"][0]["canonical_ingredient_id"]
@@ -316,7 +317,7 @@ async def test_receipt_confirmation_integration_and_price_history_separation(
             "purchased_on": "2026-11-20",
             "items": [
                 {
-                    "display_name": "Amul Gold Milk 1L",
+                    "display_name": "Amul Gold Full Cream Milk 1L",
                     "qty": 1,
                     "unit": "l",
                     "unit_price_paise": 6800,

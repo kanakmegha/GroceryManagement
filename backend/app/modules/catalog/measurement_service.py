@@ -319,7 +319,10 @@ def validate_receipt_quantity_against_price(
     # Determine quantity in the unit that unit_price is likely quoted in
     if base_unit in ("g", "ml"):
         # If raw_unit was kg/l, or unit_price is per kg/L (>= 100 paise and qty >= 500 g/ml)
-        if raw_u in ("kg", "kgs", "l", "ltr", "litre", "liter") or normalized_qty >= Decimal("500"):
+        if (
+            raw_u in ("kg", "kgs", "l", "ltr", "litre", "liter")
+            or normalized_qty >= Decimal("500")
+        ) and unit_price_paise >= 100:
             qty_for_price = normalized_qty / Decimal("1000")
         else:
             qty_for_price = normalized_qty

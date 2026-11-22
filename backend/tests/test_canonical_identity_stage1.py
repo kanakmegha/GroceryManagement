@@ -122,23 +122,45 @@ async def test_confirm_deduplicates_rate_contaminated_names_and_preserves_raw_te
 async def test_dry_run_duplicate_audit_is_readonly_and_detects_clusters(
     client: AsyncClient,
     jwks_provider: EphemeralJWKSProvider,
+    temp_db_url: str,
 ) -> None:
+    from uuid import UUID
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.modules.inventory.models import CanonicalItem
+
     token = jwks_provider.make_token(
         sub="stage1_user_2", email="s2@example.com", name="Stage1Audit"
     )
     headers = {"Authorization": f"Bearer {token}"}
     me_resp = await client.get("/api/v1/auth/me", headers=headers)
     assert me_resp.status_code == 200
-    headers["X-Household-Id"] = me_resp.json()["active_household"]["id"]
+    hh_id = me_resp.json()["active_household"]["id"]
+    headers["X-Household-Id"] = hh_id
 
-    # Seed duplicate and distinct catalog items
-    for name in ("BADAM", "BADAM 1180", "40 CHAWAL", "LAL CHAWAL"):
-        r = await client.post(
-            "/api/v1/catalog/items",
-            headers=headers,
-            json={"name": name, "default_base_unit": "g"},
-        )
-        assert r.status_code == 201, r.text
+    # Seed pre-existing duplicate and distinct catalog items directly in DB
+    # (POST /api/v1/catalog/items deduplicates at creation time).
+    engine = create_async_engine(temp_db_url, connect_args={"check_same_thread": False})
+    Session = async_sessionmaker(engine, expire_on_commit=False)
+    async with Session() as db:
+        for slug, name in (
+            ("badam", "BADAM"),
+            ("badam-1180", "BADAM 1180"),
+            ("40-chawal", "40 CHAWAL"),
+            ("lal-chawal", "LAL CHAWAL"),
+        ):
+            db.add(
+                CanonicalItem(
+                    household_id=UUID(hh_id),
+                    slug=slug,
+                    name=name,
+                    category="pantry",
+                    default_base_unit="g",
+                )
+            )
+        await db.commit()
+    await engine.dispose()
 
     resp = await client.get("/api/v1/catalog/duplicates/dry-run", headers=headers)
     assert resp.status_code == 200, resp.text
