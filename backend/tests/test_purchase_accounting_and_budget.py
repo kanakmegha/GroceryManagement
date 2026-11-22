@@ -4,7 +4,8 @@ tracking.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
@@ -169,9 +170,9 @@ async def test_santushti_end_to_end_draft_confirm_budget_and_no_restaurant_inven
     budget_before = (await client.get("/api/v1/insights/summary?days=365", headers=headers)).json()
     assert budget_before["total_spend_paise"] == 0
 
-    # 4. Edit merchant spelling in draft and move purchased_on to today for 30d budget check;
-    # verify raw_text preserved
-    today_str = date.today().isoformat()
+    # 4. Edit merchant spelling in draft and move purchased_on to today (household IST) for
+    # 30d/today budget check; verify raw_text preserved
+    today_str = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
     patch_res = await client.patch(
         f"/api/v1/purchases/drafts/{draft['id']}",
         headers=headers,
@@ -1218,3 +1219,92 @@ async def test_budget_crud_thresholds_history_isolation_and_discrepancy(
     assert aug_summary["outside_food_spend_paise"] == 0
     assert aug_summary["unclassified_spend_paise"] == 5000
     assert aug_summary["accounting_discrepancy_paise"] == 5000
+
+
+@pytest.mark.asyncio
+async def test_insights_spend_today_uses_household_ist_date_across_utc_midnight_boundary(
+    client: httpx.AsyncClient,
+    jwks_provider: EphemeralJWKSProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify spend_today_paise uses the household's Asia/Kolkata date even when the UTC/OS
+    date is still the previous calendar day (18:30–23:59 UTC).
+    """
+    token = jwks_provider.make_token(sub="user_tz_boundary", email="tz@example.com", name="TZ")
+    headers = {"Authorization": f"Bearer {token}"}
+    me = await client.get("/api/v1/auth/me", headers=headers)
+    assert me.status_code == 200
+    hh = me.json()["active_household"]
+    assert hh.get("timezone") in (None, "Asia/Kolkata")
+    headers["X-Household-Id"] = hh["id"]
+
+    # Freeze clock to 2026-11-22T19:00:00Z == 2026-11-23T00:30:00+05:30 (IST).
+    # In UTC the calendar date is 2026-11-22; in Asia/Kolkata it is 2026-11-23.
+    frozen_utc = datetime(2026, 11, 22, 19, 0, 0, tzinfo=UTC)
+
+    class _FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):  # type: ignore[override]
+            if tz is None:
+                return frozen_utc.replace(tzinfo=None)
+            return frozen_utc.astimezone(tz)
+
+    monkeypatch.setattr("app.modules.insights.router.datetime", _FrozenDatetime)
+
+    # Purchase on current household-local IST date (2026-11-23) -> included in spend_today_paise
+    p_ist_today = await client.post(
+        "/api/v1/purchases",
+        headers=headers,
+        json={
+            "merchant_name": "IST Today Mart",
+            "purchased_on": "2026-11-23",
+            "items": [
+                {
+                    "display_name": "Toor Dal",
+                    "category": "pulses",
+                    "qty": "1",
+                    "unit": "kg",
+                    "unit_price_paise": 15000,
+                    "line_total_paise": 15000,
+                    "track_inventory": False,
+                }
+            ],
+        },
+    )
+    assert p_ist_today.status_code == 201
+    c_today = await client.post(
+        f"/api/v1/purchases/{p_ist_today.json()['id']}/confirm",
+        headers=headers,
+    )
+    assert c_today.status_code == 200
+
+    # Purchase on previous household-local IST date (2026-11-22, which is the UTC date) -> excluded
+    p_ist_prev = await client.post(
+        "/api/v1/purchases",
+        headers=headers,
+        json={
+            "merchant_name": "UTC Prev Mart",
+            "purchased_on": "2026-11-22",
+            "items": [
+                {
+                    "display_name": "Poha",
+                    "category": "grains",
+                    "qty": "1",
+                    "unit": "kg",
+                    "unit_price_paise": 25000,
+                    "line_total_paise": 25000,
+                    "track_inventory": False,
+                }
+            ],
+        },
+    )
+    assert p_ist_prev.status_code == 201
+    c_prev = await client.post(
+        f"/api/v1/purchases/{p_ist_prev.json()['id']}/confirm",
+        headers=headers,
+    )
+    assert c_prev.status_code == 200
+
+    summary = (await client.get("/api/v1/insights/summary?days=30", headers=headers)).json()
+    assert summary["spend_today_paise"] == 15000
+    assert summary["total_spend_paise"] == 40000
