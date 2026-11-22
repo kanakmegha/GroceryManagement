@@ -7,13 +7,12 @@ All endpoints live under `/api/v1/discover` and require Clerk JWT authentication
 ### `GET /api/v1/discover/dishes`
 List dishes matched and ranked against the active household's pantry.
 - **Query Params**:
-  - `category`: `"all" | "can_make_now" | "missing_ingredients"` (default `"all"`)
+  - `category`: `"all" | "can_make_now" | "almost_there" | "explore_more"` (default `"all"`)
   - `saved_only`: `bool` (default `false`)
   - `region`: optional string (e.g., `"North Indian"`, `"South Indian"`)
   - `meal_type`: optional string (`"breakfast"`, `"lunch"`, `"dinner"`, `"snack"`, `"beverage"`)
   - `diet_tag`: optional string
   - `q`: optional search query (matches `canonical_name`, `alternative_names`, `search_terms`)
-  - `max_missing`: `int` (default `5`, `>= 0`)
   - `limit`: `int` (default `20`, `1..50`), `offset`: `int` (default `0`)
 - **Response (`200 OK`)**:
   ```json
@@ -42,7 +41,7 @@ List dishes matched and ranked against the active household's pantry.
         "cached_video_count": 3
       }
     ],
-    "counts": { "can_make_now": 4, "missing_ingredients": 18 },
+    "counts": { "can_make_now": 4, "almost_there": 8, "explore_more": 10 },
     "total": 22
   }
   ```
@@ -121,7 +120,7 @@ Explicit post-cooking confirmation to update pantry stock.
   - Segmented filter bar: **Can Make Now** | **Missing Ingredients** | **Saved** + region/diet chips + search bar.
   - **Dish Cards**: Dish name, region badge, prep/cook time, availability pill (`"All 6 ready"` in green vs. `"Missing 1: Spinach"` in amber), and Save bookmark icon.
 - **Dish Detail & Video Cooking Mode**:
-  - **Video Carousel / Player**: Embedded YouTube player (`WebView` / `react-native-youtube-iframe` when `embeddable=true`) + `"Open in YouTube"` button (`Linking.openURL(watch_url)`) + fallback `"Search on YouTube"` link when offline/quota-exhausted.
+  - **Video Links**: Open YouTube videos externally via `Linking.openURL(watch_url)` + fallback `"Search on YouTube"` link when offline/quota-exhausted (no embedded playback dependencies initially).
   - **Interactive Pantry Checklist**: Grouped by `Required` and `Optional`, showing exact pantry quantities (`"Have 400 g / Need 250 g"`), checkboxes for what the user actually used.
   - **Explicit Action Footer**: `"I Cooked This — Update Pantry"` opens confirmation sheet with editable quantities before calling `POST /api/v1/discover/dishes/{dish_id}/consume`.
   - **Feedback Bar**: Like / Dislike / Hide buttons.

@@ -115,3 +115,83 @@ class QuotaReservationResult:
     quota_project_key: str
     units_used: int
     daily_budget: int
+
+
+MatchStatus = Literal["available", "partial", "missing"]
+MatchMethod = Literal["primary", "verified_substitution"]
+MatchReason = Literal[
+    "MISSING_IN_PANTRY",
+    "INSUFFICIENT_QUANTITY",
+    "INCOMPARABLE_UNIT",
+    "UNVERIFIED_SUBSTITUTION_ONLY",
+]
+DiscoveryBucket = Literal["can_make_now", "almost_there", "explore_more"]
+
+
+class MatchedSubstitutionOut(BaseModel):
+    """Verified substitution that satisfied a missing/insufficient requirement."""
+
+    substitute_name: str
+    substitute_variant_id: str | None = None
+    substitute_family_id: str | None = None
+    conversion_ratio: Decimal | None = None
+    conversion_unit: str | None = None
+    notes: str | None = None
+
+
+class IngredientMatchOut(BaseModel):
+    """Per-ingredient pantry availability result for a dish."""
+
+    dish_ingredient_id: UUID
+    ingredient_name: str
+    requirement_mode: RequirementMode
+    requirement_type: RequirementType
+    required_variant_id: str | None = None
+    required_family_id: str | None = None
+    status: MatchStatus
+    matched_via: MatchMethod | None = None
+    matched_canonical_ingredient_id: UUID | None = None
+    matched_variant_id: str | None = None
+    available_qty: Decimal | None = None
+    available_unit: str | None = None
+    required_qty: Decimal | None = None
+    required_unit: str | None = None
+    reason: MatchReason | None = None
+    expiring_soon: bool = False
+    earliest_expires_on: date | None = None
+    matched_substitution: MatchedSubstitutionOut | None = None
+
+
+class DishMatchOut(BaseModel):
+    """Dish-level pantry match and deterministic ranking output."""
+
+    dish_id: UUID
+    slug: str
+    canonical_name: str
+    alternative_names: list[str]
+    cuisine: str
+    region: str
+    meal_types: list[str]
+    diet_tags: list[str]
+    prep_minutes: int | None = None
+    cook_minutes: int | None = None
+    default_servings: int
+    bucket: DiscoveryBucket
+    required_total: int
+    required_available: int
+    required_partial: int
+    required_missing: int
+    missing_ingredient_names: list[str]
+    expiring_matches: list[str]
+    is_saved: bool = False
+    user_feedback_action: str | None = None
+    requirements: list[IngredientMatchOut]
+
+
+class DishMatchResponse(BaseModel):
+    """Grouped pantry-first dish discovery results for a household."""
+
+    can_make_now: list[DishMatchOut]
+    almost_there: list[DishMatchOut]
+    explore_more: list[DishMatchOut]
+    counts: dict[str, int]
