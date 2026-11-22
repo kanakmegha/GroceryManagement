@@ -369,15 +369,24 @@ async def evaluate_draft_item_resolution(
 
     suggestions_out: list[dict[str, Any]] = []
     for sug in (res.suggestions or ())[:5]:
-        sug_ing = await _lookup_canonical_ingredient(db, variant_id=sug.variant_id)
+        is_dict = isinstance(sug, dict)
+        sug_var_id = sug.get("variant_id") if is_dict else getattr(sug, "variant_id", None)
+        sug_var_name = sug.get("variant_name") if is_dict else getattr(sug, "variant_name", None)
+        sug_fam_id = sug.get("family_id") if is_dict else getattr(sug, "family_id", None)
+        sug_fam_name = sug.get("family_name") if is_dict else getattr(sug, "family_name", None)
+        if not sug_fam_name and sug_fam_id:
+            fam_obj = catalogue.get_family(sug_fam_id)
+            sug_fam_name = fam_obj.canonical_name if fam_obj else None
+        sug_score = (sug.get("score") if is_dict else getattr(sug, "score", None)) or 0.0
+        sug_ing = await _lookup_canonical_ingredient(db, variant_id=sug_var_id)
         suggestions_out.append(
             {
-                "variant_id": sug.variant_id,
-                "variant_name": sug.variant_name,
-                "family_id": sug.family_id,
-                "family_name": sug.family_name,
+                "variant_id": sug_var_id,
+                "variant_name": sug_var_name,
+                "family_id": sug_fam_id,
+                "family_name": sug_fam_name,
                 "canonical_ingredient_id": str(sug_ing.id) if sug_ing else None,
-                "score": int(round(float(sug.score) * 100)),
+                "score": int(round(float(sug_score) * 100)),
             }
         )
 

@@ -58,10 +58,6 @@ docs/secrets/
 docs/**/private-notes.md
 docs/**/local-notes.md
 
-# Alembic migrations
-backend/alembic/
-backend/alembic.ini
-
 # Receipt OCR benchmark directories
 receipt_ocr_benchmark/datasets/
 receipt_ocr_benchmark/outputs/

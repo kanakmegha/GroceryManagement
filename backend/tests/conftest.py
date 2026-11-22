@@ -8,11 +8,11 @@ from typing import Any
 import httpx
 import jwt
 import pytest
-from alembic import command
 from alembic.config import Config
 from cryptography.hazmat.primitives.asymmetric import rsa
 from starlette.routing import _DefaultLifespan
 
+from alembic import command
 from app.core.config import Settings
 from app.main import create_app
 

@@ -20,8 +20,9 @@ SAMPLE_EX4 = Path(
 
 @pytest.fixture
 def migrated_db(tmp_path: Path) -> Path:
-    from alembic import command
     from alembic.config import Config
+
+    from alembic import command
 
     db_path = tmp_path / "exp_test.db"
     cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))

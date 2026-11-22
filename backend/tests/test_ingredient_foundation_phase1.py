@@ -8,12 +8,12 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from alembic import command
 from alembic.config import Config
 from sqlalchemy import event, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from alembic import command
 from app.modules.auth.models import Household, User
 from app.modules.catalog.ingredient_seed import seed_canonical_ingredients
 from app.modules.inventory.models import (
