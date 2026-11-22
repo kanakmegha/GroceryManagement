@@ -25,9 +25,8 @@ SAMPLE_EX4 = Path(
 
 @pytest.fixture
 def migrated_db(tmp_path: Path) -> Path:
-    from alembic.config import Config
-
     from alembic import command
+    from alembic.config import Config
 
     db_path = tmp_path / "orch_test.db"
     cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))

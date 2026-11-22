@@ -2,9 +2,8 @@ import sqlite3
 from pathlib import Path
 
 import httpx
-from alembic.config import Config
-
 from alembic import command
+from alembic.config import Config
 
 
 async def test_health_endpoints(client: httpx.AsyncClient) -> None:
