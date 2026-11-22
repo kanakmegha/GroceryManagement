@@ -14,6 +14,7 @@ from app.core.security import JWKSCache
 from app.modules.auth.router import router as auth_router
 from app.modules.cooking.meals_router import router as meals_router
 from app.modules.cooking.router import router as cooking_router
+from app.modules.discovery.router import router as discover_router
 from app.modules.experimental_ocr.router import router as experimental_ocr_router
 from app.modules.households.router import router as households_router
 from app.modules.insights.router import router as insights_router
@@ -80,6 +81,7 @@ def create_app(
     api_v1.include_router(insights_router)
     api_v1.include_router(replenishment_router)
     api_v1.include_router(shopping_list_router)
+    api_v1.include_router(discover_router)
     app.include_router(api_v1)
     app.include_router(experimental_ocr_router)
 
