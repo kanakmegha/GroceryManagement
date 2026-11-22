@@ -29,15 +29,18 @@ from tests.conftest import EphemeralJWKSProvider
 
 
 async def _snapshot_inventory(db) -> tuple[list[tuple], list[tuple]]:
-    lots = (
-        await db.execute(select(InventoryLot).order_by(InventoryLot.id.asc()))
-    ).scalars().all()
-    ledger = (
-        await db.execute(select(StockLedger).order_by(StockLedger.id.asc()))
-    ).scalars().all()
+    lots = (await db.execute(select(InventoryLot).order_by(InventoryLot.id.asc()))).scalars().all()
+    ledger = (await db.execute(select(StockLedger).order_by(StockLedger.id.asc()))).scalars().all()
     lot_snap = [
-        (l.id, l.canonical_item_id, l.initial_qty, l.remaining_qty, l.base_unit, l.lot_status)
-        for l in lots
+        (
+            lot.id,
+            lot.canonical_item_id,
+            lot.initial_qty,
+            lot.remaining_qty,
+            lot.base_unit,
+            lot.lot_status,
+        )
+        for lot in lots
     ]
     ledger_snap = [
         (e.id, e.lot_id, e.canonical_item_id, e.event_type, e.quantity_delta, e.balance_after_lot)
@@ -52,7 +55,9 @@ async def test_phase4c_ingredient_pantry_aggregation_all_scenarios(
     jwks_provider: EphemeralJWKSProvider,
     temp_db_url: str,
 ) -> None:
-    """Covers all 18 Phase 4C scenarios and asserts read-only invariance of lots and stock ledger."""
+    """Covers all 18 Phase 4C scenarios and asserts read-only invariance of lots and stock
+    ledger.
+    """
     token_a = jwks_provider.make_token(sub="user_4c_a", email="4ca@example.com", name="4C User A")
     token_b = jwks_provider.make_token(sub="user_4c_b", email="4cb@example.com", name="4C User B")
     hdr_a = {"Authorization": f"Bearer {token_a}"}
@@ -81,7 +86,8 @@ async def test_phase4c_ingredient_pantry_aggregation_all_scenarios(
         spinach_ing = ing_by_norm["spinach"]
         garlic_ing = ing_by_norm["garlic"]
 
-        # 1 & 8: Two milk products in ml and L -> 1000 ml + 1500 ml (after partial depletion) = 2500 ml
+        # 1 & 8: Two milk products in ml and L -> 1000 ml + 1500 ml (after partial depletion) =
+        # 2500 ml
         milk_p1 = CanonicalItem(
             household_id=hh_a,
             slug="amul-gold-1l",
@@ -199,16 +205,28 @@ async def test_phase4c_ingredient_pantry_aggregation_all_scenarios(
             )
         )
         await confirm_ingredient_mapping(
-            db, household_id=hh_a, canonical_item_id=tom_p1.id, canonical_ingredient_id=tomato_ing.id
+            db,
+            household_id=hh_a,
+            canonical_item_id=tom_p1.id,
+            canonical_ingredient_id=tomato_ing.id,
         )
         await confirm_ingredient_mapping(
-            db, household_id=hh_a, canonical_item_id=tom_p2.id, canonical_ingredient_id=tomato_ing.id
+            db,
+            household_id=hh_a,
+            canonical_item_id=tom_p2.id,
+            canonical_ingredient_id=tomato_ing.id,
         )
         await confirm_ingredient_mapping(
-            db, household_id=hh_a, canonical_item_id=spinach_p.id, canonical_ingredient_id=spinach_ing.id
+            db,
+            household_id=hh_a,
+            canonical_item_id=spinach_p.id,
+            canonical_ingredient_id=spinach_ing.id,
         )
         await confirm_ingredient_mapping(
-            db, household_id=hh_a, canonical_item_id=onion_p.id, canonical_ingredient_id=onion_ing.id
+            db,
+            household_id=hh_a,
+            canonical_item_id=onion_p.id,
+            canonical_ingredient_id=onion_ing.id,
         )
         # 12: Unconfirmed suggestion (user_confirmed=False)
         db.add(
@@ -357,7 +375,8 @@ async def test_phase4c_ingredient_pantry_aggregation_all_scenarios(
                 notes="Spilled 500ml",
             ),
         )
-        # 6: Consumption (COOK_OUT) on lot_r2 (-200 g -> 300 g remaining, total rice = 1000g + 300g = 1300g)
+        # 6: Consumption (COOK_OUT) on lot_r2 (-200 g -> 300 g remaining, total rice = 1000g +
+        # 300g = 1300g)
         await allocate_fefo(
             db,
             household_id=hh_a,
@@ -379,7 +398,8 @@ async def test_phase4c_ingredient_pantry_aggregation_all_scenarios(
 
     by_ing = {x["normalized_name"]: x for x in body["ingredients"]}
 
-    # Milk: 1.5 L (1500 ml) + 500 ml = 2000.000 ml across 2 products, 2 active lots (depleted excluded)
+    # Milk: 1.5 L (1500 ml) + 500 ml = 2000.000 ml across 2 products, 2 active lots (depleted
+    # excluded)
     milk_out = by_ing["milk"]
     assert Decimal(milk_out["total_remaining_qty"]) == Decimal("2000.000")
     assert milk_out["standard_unit"] == "ml"
@@ -387,7 +407,8 @@ async def test_phase4c_ingredient_pantry_aggregation_all_scenarios(
     assert milk_out["contributing_product_count"] == 2
     assert milk_out["lot_count"] == 2
 
-    # Basmati Rice: 1 kg (1000 g) + 300 g = 1300.000 g, 1 surviving product (no double count from global mapping/merged item)
+    # Basmati Rice: 1 kg (1000 g) + 300 g = 1300.000 g, 1 surviving product (no double count from
+    # global mapping/merged item)
     rice_out = by_ing["basmati_rice"]
     assert Decimal(rice_out["total_remaining_qty"]) == Decimal("1300.000")
     assert rice_out["standard_unit"] == "g"
@@ -402,7 +423,8 @@ async def test_phase4c_ingredient_pantry_aggregation_all_scenarios(
     groups_t = {g["unit"]: Decimal(g["total_qty"]) for g in tom_out["unit_groups"]}
     assert groups_t == {"g": Decimal("500.000"), "pcs": Decimal("2.000")}
 
-    # Spinach: incompatible unit ("pcs") vs standard_unit ("g") -> incomplete, total_remaining_qty is None
+    # Spinach: incompatible unit ("pcs") vs standard_unit ("g") -> incomplete, total_remaining_qty
+    # is None
     sp_out = by_ing["spinach"]
     assert sp_out["unit_completeness_status"] == "incomplete"
     assert sp_out["total_remaining_qty"] is None

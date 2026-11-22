@@ -28,8 +28,6 @@ def test_alembic_upgrade_head_on_temp_sqlite(tmp_path: Path) -> None:
     with sqlite3.connect(db_file) as conn:
         tables = {
             row[0]
-            for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
     assert {"users", "households", "household_members", "alembic_version"} <= tables

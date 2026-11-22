@@ -1,4 +1,6 @@
-"""End-to-end regression tests for receipt accounting, inventory eligibility, and budget tracking."""
+"""End-to-end regression tests for receipt accounting, inventory eligibility, and budget
+tracking.
+"""
 
 from __future__ import annotations
 
@@ -14,13 +16,24 @@ from tests.conftest import EphemeralJWKSProvider
 
 
 def _santushti_real_boxes() -> list[OcrTokenBox]:
-    """Exact bounding boxes observed from Apple Vision OCR on the uploaded Santushti Bhojanam photo."""
+    """Exact bounding boxes observed from Apple Vision OCR on the uploaded Santushti Bhojanam
+    photo.
+    """
     return [
         OcrTokenBox(text="SSAI i", confidence=0.50, x=0.227, y=0.037, w=0.103, h=0.022),
         OcrTokenBox(text="Santustl Bhojanam", confidence=0.50, x=0.239, y=0.176, w=0.430, h=0.037),
-        OcrTokenBox(text="Date: 26/04/26 Pick Up", confidence=1.00, x=0.095, y=0.336, w=0.506, h=0.040),
+        OcrTokenBox(
+            text="Date: 26/04/26 Pick Up", confidence=1.00, x=0.095, y=0.336, w=0.506, h=0.040
+        ),
         OcrTokenBox(text="18:45", confidence=1.00, x=0.090, y=0.364, w=0.117, h=0.024),
-        OcrTokenBox(text="Cashier: biller Bill No.: 2043", confidence=1.00, x=0.078, y=0.388, w=0.630, h=0.046),
+        OcrTokenBox(
+            text="Cashier: biller Bill No.: 2043",
+            confidence=1.00,
+            x=0.078,
+            y=0.388,
+            w=0.630,
+            h=0.046,
+        ),
         OcrTokenBox(text="Item", confidence=0.50, x=0.057, y=0.440, w=0.109, h=0.030),
         OcrTokenBox(text="Qty. Price Amount", confidence=1.00, x=0.355, y=0.452, w=0.417, h=0.039),
         OcrTokenBox(text="Phulka", confidence=0.50, x=0.043, y=0.506, w=0.143, h=0.030),
@@ -40,7 +53,9 @@ def _santushti_real_boxes() -> list[OcrTokenBox]:
         OcrTokenBox(text="52.25", confidence=1.00, x=0.613, y=0.823, w=0.127, h=0.030),
         OcrTokenBox(text="Round off", confidence=1.00, x=0.300, y=0.876, w=0.174, h=0.027),
         OcrTokenBox(text="+0.5C", confidence=0.50, x=0.627, y=0.886, w=0.100, h=0.022),
-        OcrTokenBox(text="Grand Total € 2195.00", confidence=1.00, x=0.146, y=0.898, w=0.578, h=0.040),
+        OcrTokenBox(
+            text="Grand Total € 2195.00", confidence=1.00, x=0.146, y=0.898, w=0.578, h=0.040
+        ),
         OcrTokenBox(text="aid via Card", confidence=1.00, x=0.000, y=0.931, w=0.210, h=0.024),
     ]
 
@@ -51,7 +66,9 @@ async def test_santushti_end_to_end_draft_confirm_budget_and_no_restaurant_inven
     jwks_provider: EphemeralJWKSProvider,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify full Santushti Bhojanam flow: OCR -> DB Draft -> Edit -> Confirm -> Budget (₹2,195) & 0 grocery lots."""
+    """Verify full Santushti Bhojanam flow: OCR -> DB Draft -> Edit -> Confirm -> Budget (₹2,195) &
+    0 grocery lots.
+    """
     token = jwks_provider.make_token(sub="user_accounting", email="acc@example.com", name="Acc")
     headers = {"Authorization": f"Bearer {token}"}
     me = await client.get("/api/v1/auth/me", headers=headers)
@@ -61,8 +78,10 @@ async def test_santushti_end_to_end_draft_confirm_budget_and_no_restaurant_inven
 
     class _MockVision:
         name = "apple_vision_ocrmac"
+
         def is_available(self) -> bool:
             return True
+
         def recognize_image(self, _png_bytes: bytes, *, page: int = 1) -> RawOcrOutput:
             boxes = _santushti_real_boxes()
             return RawOcrOutput(
@@ -75,12 +94,19 @@ async def test_santushti_end_to_end_draft_confirm_budget_and_no_restaurant_inven
 
     # Upload a valid PNG image carrying crisp text lines so IQA passes
     import io
+
     from PIL import Image, ImageDraw, ImageFont
+
     img = Image.new("RGB", (661, 1024), (245, 245, 240))
     d = ImageDraw.Draw(img)
     font = ImageFont.load_default(size=24)
     for idx in range(12):
-        d.text((40, 40 + idx * 60), f"Santushti Bhojanam Line {idx} 2090.00", fill=(20, 20, 20), font=font)
+        d.text(
+            (40, 40 + idx * 60),
+            f"Santushti Bhojanam Line {idx} 2090.00",
+            fill=(20, 20, 20),
+            font=font,
+        )
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     img_bytes = buf.getvalue()
@@ -143,7 +169,8 @@ async def test_santushti_end_to_end_draft_confirm_budget_and_no_restaurant_inven
     budget_before = (await client.get("/api/v1/insights/summary?days=365", headers=headers)).json()
     assert budget_before["total_spend_paise"] == 0
 
-    # 4. Edit merchant spelling in draft and move purchased_on to today for 30d budget check; verify raw_text preserved
+    # 4. Edit merchant spelling in draft and move purchased_on to today for 30d budget check;
+    # verify raw_text preserved
     today_str = date.today().isoformat()
     patch_res = await client.patch(
         f"/api/v1/purchases/drafts/{draft['id']}",
@@ -231,7 +258,9 @@ async def test_grocery_inventory_and_price_changes_and_discarded_draft_isolation
     client: httpx.AsyncClient,
     jwks_provider: EphemeralJWKSProvider,
 ) -> None:
-    """Verify grocery lots, avg price + price change across purchases, and discarded draft exclusion."""
+    """Verify grocery lots, avg price + price change across purchases, and discarded draft
+    exclusion.
+    """
     token = jwks_provider.make_token(sub="user_grocery", email="groc@example.com", name="Groc")
     headers = {"Authorization": f"Bearer {token}"}
     me = await client.get("/api/v1/auth/me", headers=headers)
@@ -363,7 +392,9 @@ async def test_paneer_classification_override_history_access_deletion_and_isolat
     client: httpx.AsyncClient,
     jwks_provider: EphemeralJWKSProvider,
 ) -> None:
-    """Cover grocery vs restaurant paneer, user override, detail access, deletion from history, and isolation."""
+    """Cover grocery vs restaurant paneer, user override, detail access, deletion from history, and
+    isolation.
+    """
     token_a = jwks_provider.make_token(sub="user_issue_a", email="a@example.com", name="A")
     token_b = jwks_provider.make_token(sub="user_issue_b", email="b@example.com", name="B")
     headers_a = {"Authorization": f"Bearer {token_a}"}
@@ -383,7 +414,10 @@ async def test_paneer_classification_override_history_access_deletion_and_isolat
         files={
             "file": (
                 "grocery_paneer.txt",
-                f"FreshMart Superstore\nDate: {today_str}\nFresh Paneer 250 g   Rs. 95.00\nGrand Total Rs. 95.00\n".encode(),
+                (
+                    f"FreshMart Superstore\nDate: {today_str}\n"
+                    "Fresh Paneer 250 g   Rs. 95.00\nGrand Total Rs. 95.00\n"
+                ).encode(),
                 "text/plain",
             )
         },
@@ -407,17 +441,25 @@ async def test_paneer_classification_override_history_access_deletion_and_isolat
     assert detail_confirmed.json()["items"][0]["display_name"] == "Fresh Paneer"
 
     # Household B cannot access or delete Household A's purchase
-    assert (await client.get(f"/api/v1/purchases/{g_draft['id']}", headers=headers_b)).status_code == 404
-    assert (await client.delete(f"/api/v1/purchases/{g_draft['id']}", headers=headers_b)).status_code == 404
+    assert (
+        await client.get(f"/api/v1/purchases/{g_draft['id']}", headers=headers_b)
+    ).status_code == 404
+    assert (
+        await client.delete(f"/api/v1/purchases/{g_draft['id']}", headers=headers_b)
+    ).status_code == 404
 
-    # 2. Restaurant paneer dish -> budget-only by default, but user can override track_inventory=True
+    # 2. Restaurant paneer dish -> budget-only by default, but user can override
+    # track_inventory=True
     r_res = await client.post(
         "/api/v1/purchases/ocr",
         headers=headers_a,
         files={
             "file": (
                 "rest_paneer.txt",
-                f"Spice Kitchen\nDate: {today_str}\nPatiala Kadai Paneer 1 pcs   Rs. 220.00\nGrand Total Rs. 220.00\n".encode(),
+                (
+                    f"Spice Kitchen\nDate: {today_str}\n"
+                    "Patiala Kadai Paneer 1 pcs   Rs. 220.00\nGrand Total Rs. 220.00\n"
+                ).encode(),
                 "text/plain",
             )
         },
@@ -452,7 +494,8 @@ async def test_paneer_classification_override_history_access_deletion_and_isolat
     assert r_conf.status_code == 200
     assert len(r_conf.json()["created_lots"]) == 1
 
-    # 3. Failed/unwanted draft deleted -> excluded from GET /api/v1/purchases (history) & drafts forever
+    # 3. Failed/unwanted draft deleted -> excluded from GET /api/v1/purchases (history) & drafts
+    # forever
     f_res = await client.post(
         "/api/v1/purchases/ocr",
         headers=headers_a,
@@ -460,10 +503,17 @@ async def test_paneer_classification_override_history_access_deletion_and_isolat
     )
     assert f_res.status_code == 201
     f_id = f_res.json()["id"]
-    assert (await client.delete(f"/api/v1/purchases/drafts/{f_id}", headers=headers_a)).status_code == 204
+    assert (
+        await client.delete(f"/api/v1/purchases/drafts/{f_id}", headers=headers_a)
+    ).status_code == 204
 
-    history_ids = [p["id"] for p in (await client.get("/api/v1/purchases", headers=headers_a)).json()["items"]]
-    draft_ids = [p["id"] for p in (await client.get("/api/v1/purchases/drafts", headers=headers_a)).json()["items"]]
+    history_ids = [
+        p["id"] for p in (await client.get("/api/v1/purchases", headers=headers_a)).json()["items"]
+    ]
+    draft_ids = [
+        p["id"]
+        for p in (await client.get("/api/v1/purchases/drafts", headers=headers_a)).json()["items"]
+    ]
     assert f_id not in history_ids
     assert f_id not in draft_ids
     assert g_draft["id"] in history_ids
@@ -472,27 +522,34 @@ async def test_paneer_classification_override_history_access_deletion_and_isolat
 
 @pytest.mark.asyncio
 async def test_legacy_restaurant_purchase_backfill_idempotency_and_30d_vs_365d_insights(
-    client: AsyncClient,
+    client: httpx.AsyncClient,
     jwks_provider: EphemeralJWKSProvider,
     temp_db_url: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify legacy restaurant purchase without FoodConsumption is counted once in 365D, excluded from 30D, and backfill is idempotent."""
+    """Verify legacy restaurant purchase without FoodConsumption is counted once in 365D, excluded
+    from 30D, and backfill is idempotent.
+    """
     from datetime import date
     from uuid import UUID
+
     from sqlalchemy import delete, func, select
     from sqlalchemy.ext.asyncio import async_sessionmaker
+
     from app.core.db import build_async_engine
     from app.modules.purchases.models import FoodConsumption
     from app.modules.purchases.service import backfill_missing_restaurant_consumptions
 
-    tok = jwks_provider.make_token(sub="user_legacy_rest", email="leg_rest@example.com", name="LegRest")
+    tok = jwks_provider.make_token(
+        sub="user_legacy_rest", email="leg_rest@example.com", name="LegRest"
+    )
     headers = {"Authorization": f"Bearer {tok}"}
     me = await client.get("/api/v1/auth/me", headers=headers)
     assert me.status_code == 200
     hh_id = UUID(me.json()["active_household"]["id"])
 
-    # Create a confirmed restaurant purchase dated 2026-04-26 (₹2,195.00) and a grocery purchase in the last 30D
+    # Create a confirmed restaurant purchase dated 2026-04-26 (₹2,195.00) and a grocery purchase
+    # in the last 30D
     rest = await client.post(
         "/api/v1/purchases",
         headers=headers,
@@ -501,9 +558,33 @@ async def test_legacy_restaurant_purchase_backfill_idempotency_and_30d_vs_365d_i
             "purchased_on": "2026-04-26",
             "receipt_category": "restaurant",
             "items": [
-                {"display_name": "Phulka", "category": "general", "qty": 30, "unit": "pcs", "unit_price_paise": 1500, "line_total_paise": 45000, "track_inventory": False},
-                {"display_name": "Patiala Kadai Paneer", "category": "general", "qty": 5, "unit": "pcs", "unit_price_paise": 22000, "line_total_paise": 110000, "track_inventory": False},
-                {"display_name": "Chole Masala", "category": "general", "qty": 3, "unit": "pcs", "unit_price_paise": 18000, "line_total_paise": 54000, "track_inventory": False},
+                {
+                    "display_name": "Phulka",
+                    "category": "general",
+                    "qty": 30,
+                    "unit": "pcs",
+                    "unit_price_paise": 1500,
+                    "line_total_paise": 45000,
+                    "track_inventory": False,
+                },
+                {
+                    "display_name": "Patiala Kadai Paneer",
+                    "category": "general",
+                    "qty": 5,
+                    "unit": "pcs",
+                    "unit_price_paise": 22000,
+                    "line_total_paise": 110000,
+                    "track_inventory": False,
+                },
+                {
+                    "display_name": "Chole Masala",
+                    "category": "general",
+                    "qty": 3,
+                    "unit": "pcs",
+                    "unit_price_paise": 18000,
+                    "line_total_paise": 54000,
+                    "track_inventory": False,
+                },
             ],
             "tax_paise": 10450,
             "rounding_paise": 50,
@@ -512,7 +593,9 @@ async def test_legacy_restaurant_purchase_backfill_idempotency_and_30d_vs_365d_i
     )
     assert rest.status_code == 201
     rest_id = rest.json()["id"]
-    assert (await client.post(f"/api/v1/purchases/{rest_id}/confirm", headers=headers)).status_code == 200
+    assert (
+        await client.post(f"/api/v1/purchases/{rest_id}/confirm", headers=headers)
+    ).status_code == 200
 
     groc = await client.post(
         "/api/v1/purchases",
@@ -522,24 +605,37 @@ async def test_legacy_restaurant_purchase_backfill_idempotency_and_30d_vs_365d_i
             "purchased_on": "2026-11-18",
             "receipt_category": "grocery",
             "items": [
-                {"display_name": "Whole Milk 1L", "category": "dairy", "qty": 1000, "unit": "ml", "unit_price_paise": 6000, "line_total_paise": 6000, "track_inventory": True},
+                {
+                    "display_name": "Whole Milk 1L",
+                    "category": "dairy",
+                    "qty": 1000,
+                    "unit": "ml",
+                    "unit_price_paise": 6000,
+                    "line_total_paise": 6000,
+                    "track_inventory": True,
+                },
             ],
             "total_amount_paise": 6000,
         },
     )
     assert groc.status_code == 201
-    assert (await client.post(f"/api/v1/purchases/{groc.json()['id']}/confirm", headers=headers)).status_code == 200
+    assert (
+        await client.post(f"/api/v1/purchases/{groc.json()['id']}/confirm", headers=headers)
+    ).status_code == 200
 
     # Delete the FoodConsumption row to simulate a legacy confirmed restaurant purchase
     engine = build_async_engine(temp_db_url)
     sf = async_sessionmaker(engine, expire_on_commit=False)
     async with sf() as db:
-        await db.execute(delete(FoodConsumption).where(FoodConsumption.purchase_id == UUID(rest_id)))
+        await db.execute(
+            delete(FoodConsumption).where(FoodConsumption.purchase_id == UUID(rest_id))
+        )
         await db.commit()
 
     # Pin 'today' in insights router to 2026-11-19 for deterministic 30D vs 365D check
-    from app.modules.insights import router as insights_router
     import datetime as _dt
+
+    from app.modules.insights import router as insights_router
 
     class _FixedDatetime(_dt.datetime):
         @classmethod
@@ -548,7 +644,8 @@ async def test_legacy_restaurant_purchase_backfill_idempotency_and_30d_vs_365d_i
 
     monkeypatch.setattr(insights_router, "datetime", _FixedDatetime)
 
-    # 1. Without FoodConsumption row: 30D excludes April receipt; 365D includes it ONCE under outside food
+    # 1. Without FoodConsumption row: 30D excludes April receipt; 365D includes it ONCE under
+    # outside food
     s30 = (await client.get("/api/v1/insights/summary?days=30", headers=headers)).json()
     assert s30["total_spend_paise"] == 6000
     assert s30["outside_food_spend_paise"] == 0
@@ -559,7 +656,8 @@ async def test_legacy_restaurant_purchase_backfill_idempotency_and_30d_vs_365d_i
     assert s365["outside_food_spend_paise"] == 219500
     assert s365["grocery_spend_paise"] == 6000
 
-    # 2. Idempotent backfill: creates 1 row on first call, 0 on second, keeps meal_type='unknown' & dining_mode='unknown'
+    # 2. Idempotent backfill: creates 1 row on first call, 0 on second, keeps meal_type='unknown'
+    # & dining_mode='unknown'
     async with sf() as db:
         c1 = await backfill_missing_restaurant_consumptions(db, household_id=hh_id)
         c2 = await backfill_missing_restaurant_consumptions(db, household_id=hh_id)
@@ -569,7 +667,13 @@ async def test_legacy_restaurant_purchase_backfill_idempotency_and_30d_vs_365d_i
         assert c1[0].dining_mode == "unknown"
         assert c1[0].amount_paise == 219500
         assert c1[0].consumed_on == date(2026, 4, 26)
-        fc_count = (await db.execute(select(func.count()).select_from(FoodConsumption).where(FoodConsumption.household_id == hh_id))).scalar_one()
+        fc_count = (
+            await db.execute(
+                select(func.count())
+                .select_from(FoodConsumption)
+                .where(FoodConsumption.household_id == hh_id)
+            )
+        ).scalar_one()
         assert fc_count == 1
     await engine.dispose()
 
@@ -586,7 +690,9 @@ async def test_calendar_month_accounting_boundaries_leap_year_and_exclusions(
     client: httpx.AsyncClient,
     jwks_provider: EphemeralJWKSProvider,
 ) -> None:
-    """Verify calendar-month filtering, Dec->Jan, leap-year Feb 29, first/last day bounds, discarded exclusion, and tax/discount totals."""
+    """Verify calendar-month filtering, Dec->Jan, leap-year Feb 29, first/last day bounds,
+    discarded exclusion, and tax/discount totals.
+    """
     tok = jwks_provider.make_token(sub="user_cal_month", email="cal@example.com", name="Cal")
     headers = {"Authorization": f"Bearer {tok}"}
     assert (await client.get("/api/v1/auth/me", headers=headers)).status_code == 200
@@ -624,7 +730,9 @@ async def test_calendar_month_accounting_boundaries_leap_year_and_exclusions(
         )
         assert res.status_code == 201
         pid = res.json()["id"]
-        assert (await client.post(f"/api/v1/purchases/{pid}/confirm", headers=headers)).status_code == 200
+        assert (
+            await client.post(f"/api/v1/purchases/{pid}/confirm", headers=headers)
+        ).status_code == 200
         return pid
 
     # Leap-year Feb 29, 2024
@@ -642,12 +750,23 @@ async def test_calendar_month_accounting_boundaries_leap_year_and_exclusions(
             "merchant_name": "Discarded Oct",
             "purchased_on": "2026-10-15",
             "receipt_category": "grocery",
-            "items": [{"display_name": "Rice 1kg", "category": "grains", "qty": 1, "unit": "pcs", "unit_price_paise": 9900, "line_total_paise": 9900}],
+            "items": [
+                {
+                    "display_name": "Rice 1kg",
+                    "category": "grains",
+                    "qty": 1,
+                    "unit": "pcs",
+                    "unit_price_paise": 9900,
+                    "line_total_paise": 9900,
+                }
+            ],
             "total_amount_paise": 9900,
         },
     )
     assert disc_draft.status_code == 201
-    assert (await client.delete(f"/api/v1/purchases/drafts/{disc_draft.json()['id']}", headers=headers)).status_code == 204
+    assert (
+        await client.delete(f"/api/v1/purchases/drafts/{disc_draft.json()['id']}", headers=headers)
+    ).status_code == 204
     # April & November 2026
     await confirm_purchase("2026-04-26", "Santushti", "restaurant", 219500, tax=10450)
     await confirm_purchase("2026-11-18", "Nov Mart", "grocery", 73400, tax=660, disc=1800)
@@ -655,7 +774,11 @@ async def test_calendar_month_accounting_boundaries_leap_year_and_exclusions(
     # Leap-year Feb 2024
     feb = (await client.get("/api/v1/insights/summary?year=2024&month=2", headers=headers)).json()
     assert feb["period_start"] == "2024-02-01" and feb["period_end"] == "2024-02-29"
-    assert feb["total_spend_paise"] == 5000 and feb["total_tax_paise"] == 250 and feb["total_discounts_paise"] == 100
+    assert (
+        feb["total_spend_paise"] == 5000
+        and feb["total_tax_paise"] == 250
+        and feb["total_discounts_paise"] == 100
+    )
 
     # Dec 2025 vs Jan 2026
     dec = (await client.get("/api/v1/insights/summary?year=2025&month=12", headers=headers)).json()
@@ -665,7 +788,9 @@ async def test_calendar_month_accounting_boundaries_leap_year_and_exclusions(
     assert jan["previous_period_spend_paise"] == 12000
 
     # Oct 2026 (first & last day included, discarded draft excluded)
-    oct_s = (await client.get("/api/v1/insights/summary?year=2026&month=10", headers=headers)).json()
+    oct_s = (
+        await client.get("/api/v1/insights/summary?year=2026&month=10", headers=headers)
+    ).json()
     assert oct_s["purchase_count"] == 2
     assert oct_s["total_spend_paise"] == 35000
     assert oct_s["grocery_spend_paise"] == 10000
@@ -674,7 +799,9 @@ async def test_calendar_month_accounting_boundaries_leap_year_and_exclusions(
     assert oct_s["total_discounts_paise"] == 200
 
     # Nov 2026 (excludes Oct & April)
-    nov_s = (await client.get("/api/v1/insights/summary?year=2026&month=11", headers=headers)).json()
+    nov_s = (
+        await client.get("/api/v1/insights/summary?year=2026&month=11", headers=headers)
+    ).json()
     assert nov_s["purchase_count"] == 1
     assert nov_s["total_spend_paise"] == 73400
     assert nov_s["outside_food_spend_paise"] == 0
@@ -686,19 +813,33 @@ async def test_budget_daily_weekly_monthly_yearly_and_mixed_accounting(
     client: httpx.AsyncClient,
     jwks_provider: EphemeralJWKSProvider,
 ) -> None:
-    """Verify Daily, Mon-Sun Weekly, Monthly, Yearly (incl. leap year & Dec->Jan), mixed receipts, dedup, and Asia/Kolkata."""
+    """Verify Daily, Mon-Sun Weekly, Monthly, Yearly (incl. leap year & Dec->Jan), mixed receipts,
+    dedup, and Asia/Kolkata.
+    """
     from uuid import UUID
+
     from sqlalchemy import delete
+
     from app.modules.purchases.models import FoodConsumption
 
-    token = jwks_provider.make_token(sub="user_budget_4periods", email="budget4@example.com", name="B4")
+    token = jwks_provider.make_token(
+        sub="user_budget_4periods", email="budget4@example.com", name="B4"
+    )
     headers = {"Authorization": f"Bearer {token}"}
     me = await client.get("/api/v1/auth/me", headers=headers)
     assert me.status_code == 200
     hh_id = me.json()["active_household"]["id"]
     headers["X-Household-Id"] = hh_id
 
-    async def confirm_simple(purchased_on: str, merchant: str, cat: str, total: int, tax: int = 0, disc: int = 0, charges: int = 0) -> str:
+    async def confirm_simple(
+        purchased_on: str,
+        merchant: str,
+        cat: str,
+        total: int,
+        tax: int = 0,
+        disc: int = 0,
+        charges: int = 0,
+    ) -> str:
         res = await client.post(
             "/api/v1/purchases",
             headers=headers,
@@ -725,7 +866,9 @@ async def test_budget_daily_weekly_monthly_yearly_and_mixed_accounting(
         )
         assert res.status_code == 201
         pid = res.json()["id"]
-        assert (await client.post(f"/api/v1/purchases/{pid}/confirm", headers=headers)).status_code == 200
+        assert (
+            await client.post(f"/api/v1/purchases/{pid}/confirm", headers=headers)
+        ).status_code == 200
         return pid
 
     # 2024 leap year
@@ -737,10 +880,13 @@ async def test_budget_daily_weekly_monthly_yearly_and_mixed_accounting(
     # Week of Mon 2026-11-16 .. Sun 2026-11-22
     # Monday 2026-11-16: grocery
     await confirm_simple("2026-11-16", "Mon Mart", "grocery", 20000, tax=400, disc=100, charges=50)
-    # Wednesday 2026-11-18: restaurant (with FoodConsumption deleted to test legacy missing FC fallback)
+    # Wednesday 2026-11-18: restaurant (with FoodConsumption deleted to test legacy missing FC
+    # fallback)
     legacy_rest_id = await confirm_simple("2026-11-18", "Wed Bistro", "restaurant", 30000, tax=1500)
     async with client._transport.app.state.session_maker() as db_session:  # type: ignore[attr-defined]
-        await db_session.execute(delete(FoodConsumption).where(FoodConsumption.purchase_id == UUID(legacy_rest_id)))
+        await db_session.execute(
+            delete(FoodConsumption).where(FoodConsumption.purchase_id == UUID(legacy_rest_id))
+        )
         await db_session.commit()
     # Thursday 2026-11-19: mixed receipt (grocery 6000 + cooked outside food 4000 = 10000)
     mixed_res = await client.post(
@@ -780,7 +926,9 @@ async def test_budget_daily_weekly_monthly_yearly_and_mixed_accounting(
     )
     assert mixed_res.status_code == 201
     mixed_pid = mixed_res.json()["id"]
-    assert (await client.post(f"/api/v1/purchases/{mixed_pid}/confirm", headers=headers)).status_code == 200
+    assert (
+        await client.post(f"/api/v1/purchases/{mixed_pid}/confirm", headers=headers)
+    ).status_code == 200
     # Sunday 2026-11-22: restaurant (with FoodConsumption row intact -> must not double count)
     await confirm_simple("2026-11-22", "Sun Cafe", "restaurant", 12000, tax=600)
     # Previous Sunday 2026-11-15: outside week of Nov 16-22
@@ -794,7 +942,16 @@ async def test_budget_daily_weekly_monthly_yearly_and_mixed_accounting(
             "merchant_name": "Unconfirmed Draft",
             "purchased_on": "2026-11-19",
             "receipt_category": "grocery",
-            "items": [{"display_name": "Bread", "category": "bakery", "qty": 1, "unit": "pcs", "unit_price_paise": 4000, "line_total_paise": 4000}],
+            "items": [
+                {
+                    "display_name": "Bread",
+                    "category": "bakery",
+                    "qty": 1,
+                    "unit": "pcs",
+                    "unit_price_paise": 4000,
+                    "line_total_paise": 4000,
+                }
+            ],
             "total_amount_paise": 4000,
         },
     )
@@ -806,15 +963,28 @@ async def test_budget_daily_weekly_monthly_yearly_and_mixed_accounting(
             "merchant_name": "Discarded Draft",
             "purchased_on": "2026-11-19",
             "receipt_category": "grocery",
-            "items": [{"display_name": "Butter", "category": "dairy", "qty": 1, "unit": "pcs", "unit_price_paise": 5000, "line_total_paise": 5000}],
+            "items": [
+                {
+                    "display_name": "Butter",
+                    "category": "dairy",
+                    "qty": 1,
+                    "unit": "pcs",
+                    "unit_price_paise": 5000,
+                    "line_total_paise": 5000,
+                }
+            ],
             "total_amount_paise": 5000,
         },
     )
     assert disc.status_code == 201
-    assert (await client.delete(f"/api/v1/purchases/drafts/{disc.json()['id']}", headers=headers)).status_code == 204
+    assert (
+        await client.delete(f"/api/v1/purchases/drafts/{disc.json()['id']}", headers=headers)
+    ).status_code == 204
 
     # 1. Daily view (2026-11-19 mixed receipt)
-    daily = (await client.get("/api/v1/insights/summary?period=daily&date=2026-11-19", headers=headers)).json()
+    daily = (
+        await client.get("/api/v1/insights/summary?period=daily&date=2026-11-19", headers=headers)
+    ).json()
     assert daily["period_type"] == "daily"
     assert daily["period_start"] == "2026-11-19" and daily["period_end"] == "2026-11-19"
     assert daily["purchase_count"] == 1
@@ -826,13 +996,17 @@ async def test_budget_daily_weekly_monthly_yearly_and_mixed_accounting(
     assert daily["period_purchases"][0]["merchant_name"] == "Thu Mixed Hub"
 
     # 2. Weekly view anchored on Wednesday 2026-11-18 -> Mon 2026-11-16 .. Sun 2026-11-22
-    weekly = (await client.get("/api/v1/insights/summary?period=weekly&date=2026-11-18", headers=headers)).json()
+    weekly = (
+        await client.get("/api/v1/insights/summary?period=weekly&date=2026-11-18", headers=headers)
+    ).json()
     assert weekly["period_type"] == "weekly"
     assert weekly["period_start"] == "2026-11-16" and weekly["period_end"] == "2026-11-22"
     assert weekly["period_days"] == 7
     assert weekly["purchase_count"] == 4
     assert weekly["total_spend_paise"] == 72000  # 20000 + 30000 + 10000 + 12000
-    assert weekly["outside_food_spend_paise"] == 46000  # 30000 (legacy) + 4000 (mixed) + 12000 (Sun Cafe)
+    assert (
+        weekly["outside_food_spend_paise"] == 46000
+    )  # 30000 (legacy) + 4000 (mixed) + 12000 (Sun Cafe)
     assert weekly["grocery_spend_paise"] == 26000  # 20000 + 6000
     assert weekly["total_discounts_paise"] == 100
     assert weekly["total_tax_paise"] == 2700  # 400 + 1500 + 200 + 600
@@ -845,16 +1019,24 @@ async def test_budget_daily_weekly_monthly_yearly_and_mixed_accounting(
     assert weekly["average_daily_spend_paise"] == round(72000 / weekly["elapsed_days"])
 
     # 3. Yearly view 2024 (leap year = 366 days) & 2026 (excludes 2025-12-31)
-    y2024 = (await client.get("/api/v1/insights/summary?period=yearly&year=2024", headers=headers)).json()
+    y2024 = (
+        await client.get("/api/v1/insights/summary?period=yearly&year=2024", headers=headers)
+    ).json()
     assert y2024["period_type"] == "yearly"
     assert y2024["period_start"] == "2024-01-01" and y2024["period_end"] == "2024-12-31"
     assert y2024["period_days"] == 366
     assert y2024["total_spend_paise"] == 36600
     assert y2024["average_daily_spend_paise"] == 100
     assert len(y2024["spending_trends"]) == 12
-    assert y2024["spending_trends"][1] == {"date": "2024-02", "total_paise": 36600, "purchase_count": 1}
+    assert y2024["spending_trends"][1] == {
+        "date": "2024-02",
+        "total_paise": 36600,
+        "purchase_count": 1,
+    }
 
-    y2026 = (await client.get("/api/v1/insights/summary?period=yearly&year=2026", headers=headers)).json()
+    y2026 = (
+        await client.get("/api/v1/insights/summary?period=yearly&year=2026", headers=headers)
+    ).json()
     assert y2026["period_start"] == "2026-01-01" and y2026["period_end"] == "2026-12-31"
     assert y2026["period_days"] == 365
     assert y2026["total_spend_paise"] == 87000  # 10000 (Jan 1) + 5000 (Nov 15) + 72000 (Nov 16-22)
@@ -869,7 +1051,9 @@ async def test_budget_crud_thresholds_history_isolation_and_discrepancy(
     client: httpx.AsyncClient,
     jwks_provider: EphemeralJWKSProvider,
 ) -> None:
-    """Verify budget CRUD, validation, 79.99/80/99.99/100/100.01% thresholds, history preservation, isolation, and discrepancies."""
+    """Verify budget CRUD, validation, 79.99/80/99.99/100/100.01% thresholds, history preservation,
+    isolation, and discrepancies.
+    """
     from app.modules.insights.router import _evaluate_budget_status
 
     # 1. Exact threshold boundary checks (using 1000000 paise = ₹10,000 limit for exact percentages)
@@ -909,7 +1093,11 @@ async def test_budget_crud_thresholds_history_isolation_and_discrepancy(
     bad_cat_gt = await client.put(
         "/api/v1/insights/budgets/monthly",
         headers=hdr_a,
-        json={"period_type": "monthly", "overall_limit_paise": 100000, "grocery_limit_paise": 120000},
+        json={
+            "period_type": "monthly",
+            "overall_limit_paise": 100000,
+            "grocery_limit_paise": 120000,
+        },
     )
     assert bad_cat_gt.status_code == 422
 
@@ -925,7 +1113,8 @@ async def test_budget_crud_thresholds_history_isolation_and_discrepancy(
     )
     assert bad_sum.status_code == 422
 
-    # 3. Create October monthly budget (₹10,000 overall, ₹7,000 grocery) and November update (₹12,000 overall, ₹8,000 grocery, ₹4,000 outside)
+    # 3. Create October monthly budget (₹10,000 overall, ₹7,000 grocery) and November update
+    # (₹12,000 overall, ₹8,000 grocery, ₹4,000 outside)
     oct_b = await client.put(
         "/api/v1/insights/budgets/monthly",
         headers=hdr_a,
@@ -952,7 +1141,8 @@ async def test_budget_crud_thresholds_history_isolation_and_discrepancy(
     )
     assert nov_b.status_code == 200
 
-    # Confirm purchases in Oct (₹8,500 grocery -> 85% approaching_limit) and Nov (₹13,000 restaurant -> exceeded)
+    # Confirm purchases in Oct (₹8,500 grocery -> 85% approaching_limit) and Nov (₹13,000
+    # restaurant -> exceeded)
     async def add_confirmed(purchased_on: str, merchant: str, cat: str, total: int) -> None:
         r = await client.post(
             "/api/v1/purchases",
@@ -976,13 +1166,19 @@ async def test_budget_crud_thresholds_history_isolation_and_discrepancy(
             },
         )
         assert r.status_code == 201
-        assert (await client.post(f"/api/v1/purchases/{r.json()['id']}/confirm", headers=hdr_a)).status_code == 200
+        assert (
+            await client.post(f"/api/v1/purchases/{r.json()['id']}/confirm", headers=hdr_a)
+        ).status_code == 200
 
     await add_confirmed("2026-10-10", "Oct Grocer", "grocery", 850000)
     await add_confirmed("2026-11-10", "Nov Bistro", "restaurant", 1300000)
 
     # Historical Oct budget still applies ₹10,000 limit (not overwritten by Nov's ₹12,000)
-    oct_summary = (await client.get("/api/v1/insights/summary?period=monthly&year=2026&month=10", headers=hdr_a)).json()
+    oct_summary = (
+        await client.get(
+            "/api/v1/insights/summary?period=monthly&year=2026&month=10", headers=hdr_a
+        )
+    ).json()
     assert oct_summary["budget"]["overall"]["limit_paise"] == 1000000
     assert oct_summary["budget"]["overall"]["status"] == "approaching_limit"
     assert oct_summary["budget"]["grocery"]["limit_paise"] == 700000
@@ -990,11 +1186,17 @@ async def test_budget_crud_thresholds_history_isolation_and_discrepancy(
     assert oct_summary["budget"]["outside_food"] is None
 
     # Sept (before Oct budget) has no budget configured
-    sep_summary = (await client.get("/api/v1/insights/summary?period=monthly&year=2026&month=9", headers=hdr_a)).json()
+    sep_summary = (
+        await client.get("/api/v1/insights/summary?period=monthly&year=2026&month=9", headers=hdr_a)
+    ).json()
     assert sep_summary["budget"] is None
 
     # Nov uses ₹12,000 limit -> exceeded by ₹1,000
-    nov_summary = (await client.get("/api/v1/insights/summary?period=monthly&year=2026&month=11", headers=hdr_a)).json()
+    nov_summary = (
+        await client.get(
+            "/api/v1/insights/summary?period=monthly&year=2026&month=11", headers=hdr_a
+        )
+    ).json()
     assert nov_summary["budget"]["overall"]["limit_paise"] == 1200000
     assert nov_summary["budget"]["overall"]["status"] == "exceeded"
     assert nov_summary["budget"]["overall"]["exceeded_paise"] == 100000
@@ -1008,14 +1210,11 @@ async def test_budget_crud_thresholds_history_isolation_and_discrepancy(
 
     # 5. Unclassified receipt discrepancy check (does not silently assign to grocery)
     await add_confirmed("2026-08-05", "Unresolved Store", "other", 5000)
-    aug_summary = (await client.get("/api/v1/insights/summary?period=monthly&year=2026&month=8", headers=hdr_a)).json()
+    aug_summary = (
+        await client.get("/api/v1/insights/summary?period=monthly&year=2026&month=8", headers=hdr_a)
+    ).json()
     assert aug_summary["total_spend_paise"] == 5000
     assert aug_summary["grocery_spend_paise"] == 0
     assert aug_summary["outside_food_spend_paise"] == 0
     assert aug_summary["unclassified_spend_paise"] == 5000
     assert aug_summary["accounting_discrepancy_paise"] == 5000
-
-
-
-
-

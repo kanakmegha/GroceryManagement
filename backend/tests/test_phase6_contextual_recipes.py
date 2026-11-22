@@ -9,7 +9,12 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.modules.inventory.models import CanonicalIngredient, CanonicalItem, IngredientMapping, InventoryLot
+from app.modules.inventory.models import (
+    CanonicalIngredient,
+    CanonicalItem,
+    IngredientMapping,
+    InventoryLot,
+)
 from app.modules.recipes.context_engine import classify_meal_context, classify_season_context
 from tests.conftest import EphemeralJWKSProvider
 
@@ -27,15 +32,26 @@ def test_phase6_meal_windows_timezone_and_season_weather() -> None:
     assert ny_ctx.greeting == "Good evening"
 
     # Lunch (13:00 IST = 07:30 UTC), Snack (17:00 IST = 11:30 UTC), Dinner (20:30 IST = 15:00 UTC)
-    assert classify_meal_context(datetime(2026, 7, 15, 7, 30, tzinfo=UTC), "Asia/Kolkata").meal_window == "lunch"
-    assert classify_meal_context(datetime(2026, 7, 15, 11, 30, tzinfo=UTC), "Asia/Kolkata").meal_window == "snack"
-    assert classify_meal_context(datetime(2026, 7, 15, 15, 0, tzinfo=UTC), "Asia/Kolkata").meal_window == "dinner"
+    assert (
+        classify_meal_context(datetime(2026, 7, 15, 7, 30, tzinfo=UTC), "Asia/Kolkata").meal_window
+        == "lunch"
+    )
+    assert (
+        classify_meal_context(datetime(2026, 7, 15, 11, 30, tzinfo=UTC), "Asia/Kolkata").meal_window
+        == "snack"
+    )
+    assert (
+        classify_meal_context(datetime(2026, 7, 15, 15, 0, tzinfo=UTC), "Asia/Kolkata").meal_window
+        == "dinner"
+    )
 
     # Season fallback without weather vs weather override
     s_winter = classify_season_context(datetime(2026, 1, 15, tzinfo=UTC).date())
     assert s_winter.season == "winter" and s_winter.weather_used is False
 
-    s_rain = classify_season_context(datetime(2026, 4, 15, tzinfo=UTC).date(), temperature_c=24.0, rainfall_mm=12.5)
+    s_rain = classify_season_context(
+        datetime(2026, 4, 15, tzinfo=UTC).date(), temperature_c=24.0, rainfall_mm=12.5
+    )
     assert s_rain.season == "monsoon" and s_rain.weather_used is True
 
 
@@ -45,7 +61,9 @@ async def test_phase6_contextual_recommendations_pantry_grounding_and_preference
     jwks_provider: EphemeralJWKSProvider,
     temp_db_url: str,
 ) -> None:
-    """Covers morning/lunch/snack/dinner API responses, confirmed vs unconfirmed mappings, expired exclusion, diversity, and empty state."""
+    """Covers morning/lunch/snack/dinner API responses, confirmed vs unconfirmed mappings, expired
+    exclusion, diversity, and empty state.
+    """
     token = jwks_provider.make_token(sub="user_p6", email="p6@example.com", name="P6 User")
     hdr = {"Authorization": f"Bearer {token}"}
     me = await client.get("/api/v1/auth/me", headers=hdr)
@@ -78,24 +96,40 @@ async def test_phase6_contextual_recommendations_pantry_grounding_and_preference
             ("milk-amul", "Amul Milk", "ml", Decimal("500"), "milk", True, None),
             ("almond-p6", "Badam", "g", Decimal("200"), "almonds", True, None),
             ("oil-p6", "Sunflower Oil", "ml", Decimal("500"), "sunflower_oil", True, None),
-            ("paneer-exp", "Expired Paneer", "g", Decimal("300"), "paneer", True, today - timedelta(days=2)),
+            (
+                "paneer-exp",
+                "Expired Paneer",
+                "g",
+                Decimal("300"),
+                "paneer",
+                True,
+                today - timedelta(days=2),
+            ),
             ("oats-unconf", "Quaker Oats", "g", Decimal("500"), "rolled_oats", False, None),
         ]
         for slug, name, unit, qty, ing_norm, confirmed, exp_on in items_spec:
-            ci = CanonicalItem(household_id=hh_id, slug=slug, name=name, category="pantry", default_base_unit=unit)
+            ci = CanonicalItem(
+                household_id=hh_id, slug=slug, name=name, category="pantry", default_base_unit=unit
+            )
             db.add(ci)
             await db.flush()
             db.add(
                 InventoryLot(
-                    household_id=hh_id, canonical_item_id=ci.id,
-                    initial_qty=qty, remaining_qty=qty, base_unit=unit,
-                    unit_cost_paise=5000, expires_on=exp_on, lot_status="active",
+                    household_id=hh_id,
+                    canonical_item_id=ci.id,
+                    initial_qty=qty,
+                    remaining_qty=qty,
+                    base_unit=unit,
+                    unit_cost_paise=5000,
+                    expires_on=exp_on,
+                    lot_status="active",
                 )
             )
             if ing_norm in ing_by_norm:
                 db.add(
                     IngredientMapping(
-                        household_id=hh_id, canonical_item_id=ci.id,
+                        household_id=hh_id,
+                        canonical_item_id=ci.id,
                         canonical_ingredient_id=ing_by_norm[ing_norm].id,
                         matching_confidence=Decimal("1.000") if confirmed else Decimal("0.750"),
                         mapping_source="user_confirmed" if confirmed else "catalogue",
@@ -153,7 +187,8 @@ async def test_phase6_contextual_recommendations_pantry_grounding_and_preference
         if "Paneer" in r["title"]:
             assert r["recommendation_type"] != "COOK_NOW"
 
-    # 3. Preferences API persistence & filtering (nut_free + max_prep_minutes=5 excludes longer prep)
+    # 3. Preferences API persistence & filtering (nut_free + max_prep_minutes=5 excludes longer
+    # prep)
     pref_put = await client.put(
         "/api/v1/recipes/preferences",
         headers=hdr,

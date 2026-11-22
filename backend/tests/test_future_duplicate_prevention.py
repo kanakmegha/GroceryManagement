@@ -17,7 +17,7 @@ from app.modules.catalog.product_identity_service import (
     resolve_product_identity,
 )
 from app.modules.catalog.product_merge_service import merge_canonical_products
-from app.modules.inventory.models import CanonicalItem, InventoryLot, ItemAlias, StockLedger
+from app.modules.inventory.models import CanonicalItem
 from tests.conftest import EphemeralJWKSProvider
 
 
@@ -90,7 +90,9 @@ async def test_future_duplicate_prevention_20_scenarios(
         return c1.json()
 
     c_r1 = await confirm_receipt("Chana Dal 1kg", 1000, "g")
-    c_r2 = await confirm_receipt("CHANER DAL 2", 2000, "g")  # 3. OCR spelling variation -> resolves to Chana Dal!
+    c_r2 = await confirm_receipt(
+        "CHANER DAL 2", 2000, "g"
+    )  # 3. OCR spelling variation -> resolves to Chana Dal!
     assert c_r1["created_lots"][0]["canonical_item_id"] == chana_id
     assert c_r2["created_lots"][0]["canonical_item_id"] == chana_id
 
@@ -155,9 +157,13 @@ async def test_future_duplicate_prevention_20_scenarios(
         await learn_confirmed_product_alias(
             db, household_id=hh_a, canonical_item_id=akhrot.id, raw_description="Kashmiri Walnut"
         )
-        # Attempt conflicting alias for same normalized_alias on a different CanonicalItem -> preserved for akhrot
+        # Attempt conflicting alias for same normalized_alias on a different CanonicalItem ->
+        # preserved for akhrot
         alias_conflict = await learn_confirmed_product_alias(
-            db, household_id=hh_a, canonical_item_id=moong_dhuli.id, raw_description="Kashmiri Walnut"
+            db,
+            household_id=hh_a,
+            canonical_item_id=moong_dhuli.id,
+            raw_description="Kashmiri Walnut",
         )
         assert alias_conflict is not None
         assert alias_conflict.canonical_item_id == akhrot.id
@@ -219,7 +225,10 @@ async def test_future_duplicate_prevention_20_scenarios(
 
         # 18. Soft-merged product alias resolves to survivor
         await learn_confirmed_product_alias(
-            db, household_id=hh_a, canonical_item_id=dup_akhrot.id, raw_description="Akrot Legacy Alias"
+            db,
+            household_id=hh_a,
+            canonical_item_id=dup_akhrot.id,
+            raw_description="Akrot Legacy Alias",
         )
         await merge_canonical_products(
             db, household_id=hh_a, survivor_id=akhrot.id, duplicate_ids=[dup_akhrot.id]

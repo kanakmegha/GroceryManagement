@@ -11,10 +11,10 @@ Follows the matching priority in `indian_household_ingredient_catalogue.json`:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 from difflib import SequenceMatcher
-import re
 from typing import Any
 from uuid import UUID
 
@@ -35,13 +35,54 @@ _PACK_NOISE_RE = re.compile(
 )
 _BRAND_NOISE_TOKENS = frozenset(
     {
-        "amul", "aavin", "nandini", "mother", "dairy", "heritage", "milky", "mist",
-        "country", "delight", "akshayakalpa", "nestle", "britannia", "gowardhan",
-        "india", "gate", "daawat", "kohinoor", "fortune", "saffola", "dhara",
-        "sundrop", "tata", "sampann", "aashirvaad", "pillsbury", "everest", "mdh",
-        "catch", "mtr", "aachi", "sakthi", "fresho", "royal", "fresh", "pure",
-        "classic", "premium", "select", "special", "taaza", "udhaiyam", "eastern",
-        "prabhat", "generic", "local", "brand", "another",
+        "amul",
+        "aavin",
+        "nandini",
+        "mother",
+        "dairy",
+        "heritage",
+        "milky",
+        "mist",
+        "country",
+        "delight",
+        "akshayakalpa",
+        "nestle",
+        "britannia",
+        "gowardhan",
+        "india",
+        "gate",
+        "daawat",
+        "kohinoor",
+        "fortune",
+        "saffola",
+        "dhara",
+        "sundrop",
+        "tata",
+        "sampann",
+        "aashirvaad",
+        "pillsbury",
+        "everest",
+        "mdh",
+        "catch",
+        "mtr",
+        "aachi",
+        "sakthi",
+        "fresho",
+        "royal",
+        "fresh",
+        "pure",
+        "classic",
+        "premium",
+        "select",
+        "special",
+        "taaza",
+        "udhaiyam",
+        "eastern",
+        "prabhat",
+        "generic",
+        "local",
+        "brand",
+        "another",
     }
 )
 
@@ -201,17 +242,22 @@ class IngredientResolver:
                         phrase_hits.append((len(anorm.split()), 1, anorm, unspec))
 
         if phrase_hits:
-            # Prefer longest token span, then higher priority (variant name > variant alias > family alias), then char length
+            # Prefer longest token span, then higher priority (variant name > variant alias >
+            # family alias), then char length
             phrase_hits.sort(key=lambda h: (h[0], h[1], len(h[2])), reverse=True)
             top_tok_len, top_prio, top_phrase, top_var = phrase_hits[0]
             # Check if another distinct variant tied at the exact same top specificity
             tied_variants: list[CatalogueVariant] = []
             seen_tied: set[str] = set()
             for tok_len, prio, phr, var in phrase_hits:
-                if tok_len == top_tok_len and prio == top_prio and len(phr) == len(top_phrase):
-                    if var.variant_id not in seen_tied:
-                        seen_tied.add(var.variant_id)
-                        tied_variants.append(var)
+                if (
+                    tok_len == top_tok_len
+                    and prio == top_prio
+                    and len(phr) == len(top_phrase)
+                    and var.variant_id not in seen_tied
+                ):
+                    seen_tied.add(var.variant_id)
+                    tied_variants.append(var)
             if len(tied_variants) > 1:
                 return self._build_unresolved(
                     orig=orig,
@@ -219,7 +265,9 @@ class IngredientResolver:
                     reason=f"ambiguous_phrase:{top_phrase}",
                     suggestions=tied_variants,
                 )
-            source = "longest_specific_phrase" if not top_var.is_unspecified_variant else "family_alias"
+            source = (
+                "longest_specific_phrase" if not top_var.is_unspecified_variant else "family_alias"
+            )
             conf = Decimal("0.940") if not top_var.is_unspecified_variant else Decimal("0.910")
             return self._build_result(
                 top_var,
@@ -256,7 +304,9 @@ class IngredientResolver:
         receipt_text: str,
         canonical_item_id: UUID | None = None,
     ) -> IngredientResolutionResult:
-        """Resolve a receipt description using DB confirmed mappings + household aliases + catalogue."""
+        """Resolve a receipt description using DB confirmed mappings + household aliases +
+        catalogue.
+        """
         confirmed_variant: CatalogueVariant | None = None
         if canonical_item_id is not None:
             stmt = (

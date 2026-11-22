@@ -106,7 +106,7 @@ async def test_extract_receipt_flags_math_mismatch() -> None:
 async def test_extract_receipt_image_graceful_fallback_without_tesseract(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("app.infra.ocr.pipeline.shutil.which", lambda _cmd: None)
+    monkeypatch.setattr("shutil.which", lambda _cmd: None)
     # Minimal fake PNG header bytes
     fake_png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
     result = await extract_receipt(

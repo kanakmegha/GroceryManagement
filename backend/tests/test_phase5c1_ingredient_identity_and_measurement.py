@@ -33,10 +33,21 @@ def test_phase5c1_measurement_normalization_and_multipack_rules() -> None:
 
 def test_phase5c1_product_naming_and_variants() -> None:
     """Covers OCR currency/special char cleanup, balanced parens, and variant preservation."""
-    assert standardize_product_name("1 resh Tender Coconut (Elaneer)").display_name == "Tender Coconut"
-    assert standardize_product_name("Amul Milk Chocolate- Smooth & Creamy 150 g Carton").display_name == "Amul Milk Chocolate"
-    assert standardize_product_name("Green Grapes (Thraakshi) R$").display_name == "Green Grapes (Thraakshi)"
-    assert standardize_product_name("Eastern Premium Hing (Compounded Asafoetida)").display_name == "Eastern Premium Hing (Compounded Asafoetida)"
+    assert (
+        standardize_product_name("1 resh Tender Coconut (Elaneer)").display_name == "Tender Coconut"
+    )
+    assert (
+        standardize_product_name("Amul Milk Chocolate- Smooth & Creamy 150 g Carton").display_name
+        == "Amul Milk Chocolate"
+    )
+    assert (
+        standardize_product_name("Green Grapes (Thraakshi) R$").display_name
+        == "Green Grapes (Thraakshi)"
+    )
+    assert (
+        standardize_product_name("Eastern Premium Hing (Compounded Asafoetida)").display_name
+        == "Eastern Premium Hing (Compounded Asafoetida)"
+    )
     # Variants remain distinct
     assert standardize_product_name("Moong Dal (Split)").display_name == "Moong Dal (Split)"
     assert standardize_product_name("Moong Sabut").display_name == "Moong Sabut"
@@ -48,7 +59,9 @@ async def test_phase5c1_end_to_end_receipt_to_ingredient_summary(
     jwks_provider: EphemeralJWKSProvider,
     temp_db_url: str,
 ) -> None:
-    """Covers receipt -> purchase item -> canonical item -> mapping -> lot -> ingredient summary & price history."""
+    """Covers receipt -> purchase item -> canonical item -> mapping -> lot -> ingredient summary &
+    price history.
+    """
     token = jwks_provider.make_token(sub="user_5c1", email="5c1@example.com", name="5C1 User")
     hdr = {"Authorization": f"Bearer {token}"}
     me = await client.get("/api/v1/auth/me", headers=hdr)
@@ -56,7 +69,8 @@ async def test_phase5c1_end_to_end_receipt_to_ingredient_summary(
     hh_id = UUID(me.json()["active_household"]["id"])
     hdr["X-Household-Id"] = str(hh_id)
 
-    # Create a receipt draft with multipack Milk (2 packets x 500 ml), Chana Dal 1 kg, and unmapped Apple 3 pcs
+    # Create a receipt draft with multipack Milk (2 packets x 500 ml), Chana Dal 1 kg, and
+    # unmapped Apple 3 pcs
     draft_res = await client.post(
         "/api/v1/purchases/drafts",
         headers=hdr,
@@ -109,15 +123,20 @@ async def test_phase5c1_end_to_end_receipt_to_ingredient_summary(
     )
     assert conf_res.status_code == 200
 
-    # Verify raw OCR evidence preserved, normalized quantities accurate, and standardized product names created
+    # Verify raw OCR evidence preserved, normalized quantities accurate, and standardized product
+    # names created
     engine = create_async_engine(temp_db_url, connect_args={"check_same_thread": False})
     Session = async_sessionmaker(engine, expire_on_commit=False)
     async with Session() as db:
         pis = (
-            await db.execute(select(PurchaseItem).where(PurchaseItem.household_id == hh_id))
-        ).scalars().all()
+            (await db.execute(select(PurchaseItem).where(PurchaseItem.household_id == hh_id)))
+            .scalars()
+            .all()
+        )
         pi_by_raw = {p.raw_text: p for p in pis}
-        assert pi_by_raw["Aavin Full Cream Milk 500 ml R$ 60.00"].normalized_qty == Decimal("1000.000")
+        assert pi_by_raw["Aavin Full Cream Milk 500 ml R$ 60.00"].normalized_qty == Decimal(
+            "1000.000"
+        )
         assert pi_by_raw["Aavin Full Cream Milk 500 ml R$ 60.00"].base_unit == "ml"
         assert pi_by_raw["Amul Gold Milk 1 L"].normalized_qty == Decimal("1000.000")
         assert pi_by_raw["8 Chana-Đal 1 KG 110: 110.00"].normalized_qty == Decimal("1000.000")
@@ -126,7 +145,9 @@ async def test_phase5c1_end_to_end_receipt_to_ingredient_summary(
 
         # Confirm Milk mappings for both brands (without leaking brand into ingredient heading)
         milk_ing = (
-            await db.execute(select(CanonicalIngredient).where(CanonicalIngredient.normalized_name == "milk"))
+            await db.execute(
+                select(CanonicalIngredient).where(CanonicalIngredient.normalized_name == "milk")
+            )
         ).scalar_one()
         aavin_cid = pi_by_raw["Aavin Full Cream Milk 500 ml R$ 60.00"].canonical_item_id
         amul_cid = pi_by_raw["Amul Gold Milk 1 L"].canonical_item_id
@@ -159,7 +180,8 @@ async def test_phase5c1_end_to_end_receipt_to_ingredient_summary(
                 existing_map.user_confirmed = True
         await db.commit()
 
-    # Check ingredient summary API: Milk aggregates 1000 + 1000 = 2000 ml under canonical name "Milk"
+    # Check ingredient summary API: Milk aggregates 1000 + 1000 = 2000 ml under canonical name
+    # "Milk"
     ing_res = await client.get("/api/v1/inventory/ingredients/summary", headers=hdr)
     assert ing_res.status_code == 200
     ing_data = ing_res.json()
@@ -168,7 +190,8 @@ async def test_phase5c1_end_to_end_receipt_to_ingredient_summary(
     assert Decimal(milk_rows[0]["total_remaining_qty"]) == Decimal("2000.000")
     assert milk_rows[0]["standard_unit"] == "ml"
 
-    # Unmapped Apple stays in unmapped_products with 3 pcs and cleaned name, NOT in confirmed ingredients
+    # Unmapped Apple stays in unmapped_products with 3 pcs and cleaned name, NOT in confirmed
+    # ingredients
     unmapped_names = [u["name"] for u in ing_data["unmapped_products"]]
     assert "Imported Daily Apple (Sebu)" in unmapped_names
     assert all(x["name"] != "Imported Daily Apple (Sebu)" for x in ing_data["ingredients"])

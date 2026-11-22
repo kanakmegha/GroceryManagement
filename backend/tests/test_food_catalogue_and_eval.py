@@ -10,9 +10,12 @@ from tests.conftest import EphemeralJWKSProvider
 
 
 def test_held_out_indian_and_international_food_classification_metrics() -> None:
-    """Evaluate held-out food descriptions (unseen phrasing) across category, state, and pantry eligibility."""
+    """Evaluate held-out food descriptions (unseen phrasing) across category, state, and pantry
+    eligibility.
+    """
     held_out_cases: list[tuple[str, str, str, str, bool]] = [
-        # (raw_description, receipt_category, expected_category, expected_state, expected_pantry_eligible)
+        # (raw_description, receipt_category, expected_category, expected_state,
+        # expected_pantry_eligible)
         ("Fresh Bhindi 250g", "grocery", "vegetable", "fresh", True),
         ("Green Lauki 1pc", "grocery", "vegetable", "fresh", True),
         ("Desi Tamatar 500g", "grocery", "vegetable", "fresh", True),
@@ -58,14 +61,22 @@ def test_held_out_indian_and_international_food_classification_metrics() -> None
 
 
 def test_uncertain_item_flagged_for_review_and_normalizer_preserves_identity() -> None:
-    """Non-food items are excluded as household_non_food, and unknown OCR items require review with pantry_eligible=False."""
-    assert FoodNameNormalizer.normalize("bb Popular Toor Dal 1 kg Pouch (7 Days Return)") == "toor dal"
-    scrubber = FoodClassificationService.classify_item("Stainless Steel Scrubber 2pcs", receipt_category="grocery")
+    """Non-food items are excluded as household_non_food, and unknown OCR items require review with
+    pantry_eligible=False.
+    """
+    assert (
+        FoodNameNormalizer.normalize("bb Popular Toor Dal 1 kg Pouch (7 Days Return)") == "toor dal"
+    )
+    scrubber = FoodClassificationService.classify_item(
+        "Stainless Steel Scrubber 2pcs", receipt_category="grocery"
+    )
     assert scrubber.budget_treatment == "household_non_food"
     assert scrubber.pantry_eligible is False
     assert scrubber.classification_status == "non_food"
 
-    unknown = FoodClassificationService.classify_item("Xyzqr Unrecognized Ocr Token 2pcs", receipt_category="grocery")
+    unknown = FoodClassificationService.classify_item(
+        "Xyzqr Unrecognized Ocr Token 2pcs", receipt_category="grocery"
+    )
     assert unknown.budget_treatment == "requires_user_review"
     assert unknown.pantry_eligible is False
     assert unknown.classification_status == "ambiguous_review"
@@ -74,7 +85,9 @@ def test_uncertain_item_flagged_for_review_and_normalizer_preserves_identity() -
 
 
 def test_required_pantry_vs_meal_vs_nonfood_classification_pairs() -> None:
-    """Verify all required classification distinctions (raw vs cooked, food vs non-food, unknown)."""
+    """Verify all required classification distinctions (raw vs cooked, food vs non-food,
+    unknown).
+    """
     cases = [
         ("Fresh Paneer 200 g", "grocery", "pantry_eligible", True),
         ("Patiala Kadai Paneer", "restaurant", "prepared_meal", False),
@@ -93,7 +106,9 @@ def test_required_pantry_vs_meal_vs_nonfood_classification_pairs() -> None:
     ]
     for text, rcat, expected_status, expected_pantry in cases:
         res = FoodClassificationService.classify_item(text, receipt_category=rcat)
-        assert res.classification_status == expected_status, f"{text}: got {res.classification_status}"
+        assert res.classification_status == expected_status, (
+            f"{text}: got {res.classification_status}"
+        )
         assert res.pantry_eligible is expected_pantry, f"{text}: got pantry={res.pantry_eligible}"
 
 
@@ -102,7 +117,9 @@ async def test_user_correction_creates_household_scoped_alias(
     client: AsyncClient,
     jwks_provider: EphemeralJWKSProvider,
 ) -> None:
-    """User correcting a receipt draft line stores a household-scoped alias without leaking to other households."""
+    """User correcting a receipt draft line stores a household-scoped alias without leaking to
+    other households.
+    """
     tok_a = jwks_provider.make_token(sub="user_alias_a", email="a@example.com", name="A")
     tok_b = jwks_provider.make_token(sub="user_alias_b", email="b@example.com", name="B")
     h_a = {"Authorization": f"Bearer {tok_a}"}
@@ -148,7 +165,8 @@ async def test_user_correction_creates_household_scoped_alias(
     )
     assert patch_resp.status_code == 200
 
-    # Re-uploading same raw text in Household A resolves via user_alias; Household B does NOT inherit A's alias
+    # Re-uploading same raw text in Household A resolves via user_alias; Household B does NOT
+    # inherit A's alias
     draft_a2 = await client.post(
         "/api/v1/purchases/ocr",
         headers=h_a,

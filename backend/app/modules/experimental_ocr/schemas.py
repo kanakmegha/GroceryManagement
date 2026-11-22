@@ -1,8 +1,10 @@
 """V10.8 Extraction Data Contract schemas for Experimental V10.6 OCR."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any, Generic, Literal, TypeVar
+
 from pydantic import BaseModel, Field
 
 T = TypeVar("T")
@@ -75,7 +77,9 @@ class ExperimentalDateEvidence(BaseModel):
     parsed_date: str | None = None
     assumed_convention: str = "UNPARSEABLE"
     confidence: float = 0.0
-    ambiguity_status: Literal["UNAMBIGUOUS", "AMBIGUOUS_DAY_MONTH_SWAP", "UNPARSEABLE"] = "UNPARSEABLE"
+    ambiguity_status: Literal["UNAMBIGUOUS", "AMBIGUOUS_DAY_MONTH_SWAP", "UNPARSEABLE"] = (
+        "UNPARSEABLE"
+    )
     provenance: ProvenanceType = "UNAVAILABLE"
 
 
@@ -86,7 +90,9 @@ class ExperimentalExtractionResult(BaseModel):
     latency_ms: float = 0.0
     token_usage: dict[str, Any] = Field(default_factory=dict)
     raw_ocr_summary: dict[str, Any] = Field(default_factory=dict)
-    merchant_evidence: ExperimentalMerchantEvidence = Field(default_factory=ExperimentalMerchantEvidence)
+    merchant_evidence: ExperimentalMerchantEvidence = Field(
+        default_factory=ExperimentalMerchantEvidence
+    )
     date_evidence: ExperimentalDateEvidence = Field(default_factory=ExperimentalDateEvidence)
     items: list[ExperimentalItem] = Field(default_factory=list)
     fees: list[ExperimentalFee] = Field(default_factory=list)

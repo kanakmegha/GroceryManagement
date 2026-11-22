@@ -50,6 +50,7 @@ class LocalVisionOcrProvider:
     def is_available(self) -> bool:
         try:
             import ocrmac  # noqa: F401
+
             return True
         except ImportError:
             return False
@@ -57,8 +58,8 @@ class LocalVisionOcrProvider:
     def recognize_image(self, png_bytes: bytes, *, page: int = 1) -> RawOcrOutput:
         warnings: list[str] = []
         try:
-            from PIL import Image
             from ocrmac import ocrmac
+            from PIL import Image
         except ImportError:
             return RawOcrOutput(
                 adapter_name=self.name,
@@ -200,7 +201,10 @@ class TesseractOcrProvider:
         # Group into visual lines for raw_text instead of flattening onto one line
         grouped_lines: list[list[OcrTokenBox]] = []
         for b in boxes:
-            if grouped_lines and abs(b.y_center - grouped_lines[-1][0].y_center) <= max(b.h, 0.012) * 0.65:
+            if (
+                grouped_lines
+                and abs(b.y_center - grouped_lines[-1][0].y_center) <= max(b.h, 0.012) * 0.65
+            ):
                 grouped_lines[-1].append(b)
             else:
                 grouped_lines.append([b])
@@ -226,9 +230,7 @@ class HuggingFaceVlmProvider:
         settings = get_settings()
         self._token = (token if token is not None else settings.HF_TOKEN).strip()
         self._model_id = (
-            model_id
-            or os.getenv("RECEIPT_VLM_MODEL_ID", "").strip()
-            or self.DEFAULT_VLM_MODEL
+            model_id or os.getenv("RECEIPT_VLM_MODEL_ID", "").strip() or self.DEFAULT_VLM_MODEL
         )
         self._enabled = os.getenv("RECEIPT_ENABLE_CLOUD_VLM", "false").lower() in {
             "1",
@@ -253,8 +255,10 @@ class HuggingFaceVlmProvider:
             "Extract the receipt into strict JSON with keys: "
             "merchant_name, receipt_number, receipt_date (YYYY-MM-DD or as printed), "
             "currency, subtotal, discount, cgst, sgst, igst, tax_total, rounding, grand_total, "
-            "payment_method, and items (array of {raw_text, name, quantity, unit, unit_price, total_price}). "
-            "Preserve exact printed item names and numbers. Never invent missing brands, quantities, or prices. "
+            "payment_method, and items (array of {raw_text, name, quantity, unit, "
+            "unit_price, total_price}). "
+            "Preserve exact printed item names and numbers. Never invent missing brands, "
+            "quantities, or prices. "
             "Return JSON only."
         )
         payload = {
@@ -289,11 +293,7 @@ class HuggingFaceVlmProvider:
                         logger.warning("VLM receipt call returned HTTP %s", resp.status_code)
                         return None
                     data = resp.json()
-                    content = (
-                        data.get("choices", [{}])[0]
-                        .get("message", {})
-                        .get("content", "")
-                    )
+                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                     if not content:
                         return None
                     cleaned = content.strip()
@@ -348,14 +348,14 @@ class AzureReceiptProvider:
             op_loc = resp.headers.get("operation-location")
             if not op_loc:
                 return None
-            poll = await client.get(
-                op_loc, headers={"Ocp-Apim-Subscription-Key": self.api_key}
-            )
+            poll = await client.get(op_loc, headers={"Ocp-Apim-Subscription-Key": self.api_key})
             return poll.json() if poll.status_code == 200 else None
 
 
 class TextractExpenseProvider:
-    """Adapter stub/wrapper for Amazon Textract AnalyzeExpense (requires AWS credentials + boto3)."""
+    """Adapter stub/wrapper for Amazon Textract AnalyzeExpense (requires AWS credentials +
+    boto3).
+    """
 
     name = "aws_textract_expense"
 

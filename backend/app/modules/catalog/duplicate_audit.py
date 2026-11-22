@@ -110,19 +110,35 @@ def _cluster_key_for_item(name: str) -> tuple[str, str]:
 def _cleanliness_score(name: str, counts: AffectedRecordCounts) -> tuple[int, int, int]:
     """Higher tuple = better survivor candidate."""
     stripped = name.strip()
-    has_noise_prefix = bool(re.match(r"^[\"*•°\-–\d]", stripped)) and not stripped.lower().startswith("40 chawal")
+    has_noise_prefix = bool(
+        re.match(r"^[\"*•°\-–\d]", stripped)
+    ) and not stripped.lower().startswith("40 chawal")
     has_rate_suffix = bool(re.search(r"\b\d{3,}\b", stripped))
-    clean_bonus = 2 if (not has_noise_prefix and not has_rate_suffix) else (1 if not has_noise_prefix else 0)
+    clean_bonus = (
+        2 if (not has_noise_prefix and not has_rate_suffix) else (1 if not has_noise_prefix else 0)
+    )
     refs = counts.purchase_items + counts.inventory_lots + counts.stock_ledger
     return (clean_bonus, refs, -len(stripped))
 
 
 def _classify_duplicate_kind(dup_name: str, survivor_name: str) -> tuple[str, str, float]:
     if re.search(r"\b\d{3,}\b", dup_name) or re.search(r"\b(?:kg|g)\s+\d+\b", dup_name, re.I):
-        return "rate_contamination", f"Rate/price suffix in '{dup_name}' matches '{survivor_name}'", 0.96
+        return (
+            "rate_contamination",
+            f"Rate/price suffix in '{dup_name}' matches '{survivor_name}'",
+            0.96,
+        )
     if re.search(r"(?:=====|qty\s*:)", dup_name, re.I) or re.match(r"^[\"*•°\-–\d]", dup_name):
-        return "serial_or_bleed", f"Serial/bullet or section/summary bleed in '{dup_name}' matches '{survivor_name}'", 0.96
-    return "ocr_noise", f"OCR spelling/spacing variation '{dup_name}' matches '{survivor_name}'", 0.92
+        return (
+            "serial_or_bleed",
+            f"Serial/bullet or section/summary bleed in '{dup_name}' matches '{survivor_name}'",
+            0.96,
+        )
+    return (
+        "ocr_noise",
+        f"OCR spelling/spacing variation '{dup_name}' matches '{survivor_name}'",
+        0.92,
+    )
 
 
 async def run_dry_run_duplicate_audit(
@@ -132,13 +148,17 @@ async def run_dry_run_duplicate_audit(
 ) -> DuplicateAuditReport:
     """Compute a strictly read-only proposed merge map for active CanonicalItems."""
     items = (
-        await db.execute(
-            select(CanonicalItem).where(
-                CanonicalItem.household_id == household_id,
-                CanonicalItem.is_active.is_(True),
+        (
+            await db.execute(
+                select(CanonicalItem).where(
+                    CanonicalItem.household_id == household_id,
+                    CanonicalItem.is_active.is_(True),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     lot_rows = (
         await db.execute(
@@ -172,10 +192,14 @@ async def run_dry_run_duplicate_audit(
     sl_map = {row[0]: int(row[1]) for row in sl_rows}
 
     cooking_plans = (
-        await db.execute(
-            select(CookingPlan.ingredients).where(CookingPlan.household_id == household_id)
+        (
+            await db.execute(
+                select(CookingPlan.ingredients).where(CookingPlan.household_id == household_id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     cp_counts: dict[str, int] = defaultdict(int)
     for ing_list in cooking_plans:
         if isinstance(ing_list, list):
@@ -223,7 +247,8 @@ async def run_dry_run_duplicate_audit(
         survivor_item, survivor_suggested, _ = members_sorted[0]
         rename_needed = (
             survivor_suggested
-            if survivor_item.name.strip() != survivor_suggested and re.match(r"^[\"*•°\-–\d]", survivor_item.name.strip())
+            if survivor_item.name.strip() != survivor_suggested
+            and re.match(r"^[\"*•°\-–\d]", survivor_item.name.strip())
             else None
         )
         for dup_item, _dup_sug, dup_counts in members_sorted[1:]:

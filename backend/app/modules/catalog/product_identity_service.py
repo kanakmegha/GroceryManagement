@@ -30,10 +30,33 @@ HIGH_RESOLUTION_THRESHOLD = Decimal("0.900")
 MEDIUM_RESOLUTION_THRESHOLD = Decimal("0.650")
 
 _KNOWN_BRAND_TOKENS = {
-    "amul", "aavin", "nandini", "mother", "heritage", "milky", "mist",
-    "india", "gate", "daawat", "fortune", "saffola", "dhara", "tata",
-    "aashirvaad", "everest", "mdh", "catch", "mtr", "eastern", "bb",
-    "popular", "fresho", "dabur", "haldiram", "haldirams", "prabhat",
+    "amul",
+    "aavin",
+    "nandini",
+    "mother",
+    "heritage",
+    "milky",
+    "mist",
+    "india",
+    "gate",
+    "daawat",
+    "fortune",
+    "saffola",
+    "dhara",
+    "tata",
+    "aashirvaad",
+    "everest",
+    "mdh",
+    "catch",
+    "mtr",
+    "eastern",
+    "bb",
+    "popular",
+    "fresho",
+    "dabur",
+    "haldiram",
+    "haldirams",
+    "prabhat",
 }
 
 _ABBREVIATIONS: dict[str, str] = {
@@ -70,7 +93,14 @@ _OCR_TOKEN_CORRECTIONS: dict[str, str] = {
 }
 
 _DISTINCT_FORM_TOKENS = {
-    "flour", "atta", "puree", "paste", "oil", "chocolate", "kali", "lal",
+    "flour",
+    "atta",
+    "puree",
+    "paste",
+    "oil",
+    "chocolate",
+    "kali",
+    "lal",
 }
 
 _PACK_RE = re.compile(
@@ -189,7 +219,9 @@ async def resolve_product_identity(
     if alias_row is not None:
         alias_obj, item_obj = alias_row
         seen_ids: set[UUID] = set()
-        while (not item_obj.is_active or item_obj.merged_into_id is not None) and item_obj.merged_into_id is not None:
+        while (
+            not item_obj.is_active or item_obj.merged_into_id is not None
+        ) and item_obj.merged_into_id is not None:
             if item_obj.id in seen_ids:
                 break
             seen_ids.add(item_obj.id)
@@ -334,7 +366,9 @@ async def learn_confirmed_product_alias(
     canonical_item_id: UUID,
     raw_description: str,
 ) -> ItemAlias | None:
-    """Persist an approved household ItemAlias ONLY after user confirmation, with conflict checks."""
+    """Persist an approved household ItemAlias ONLY after user confirmation, with conflict
+    checks.
+    """
     norm_alias = normalize_product_description(raw_description)
     if not norm_alias:
         norm_alias = re.sub(r"[^a-z0-9\s]+", " ", raw_description.strip().lower()).strip()
@@ -385,7 +419,8 @@ async def get_or_create_canonical_item(
     slug_override: str | None = None,
     canonical_name_override: str | None = None,
 ) -> tuple[CanonicalItem, ProductResolutionResult, bool]:
-    """Resolve an existing active CanonicalItem or safely create a new one with concurrency protection.
+    """Resolve an existing active CanonicalItem or safely create a new one with concurrency
+    protection.
 
     Returns ``(canonical_item, resolution_result, created_new)``.
     """
@@ -411,22 +446,28 @@ async def get_or_create_canonical_item(
 
     # Exact slug check (follow soft-merged survivor if merged)
     existing_by_slug = (
-        await db.execute(
-            select(CanonicalItem)
-            .where(
-                CanonicalItem.slug == slug,
-                or_(
-                    CanonicalItem.household_id == household_id,
-                    CanonicalItem.household_id.is_(None),
-                ),
+        (
+            await db.execute(
+                select(CanonicalItem)
+                .where(
+                    CanonicalItem.slug == slug,
+                    or_(
+                        CanonicalItem.household_id == household_id,
+                        CanonicalItem.household_id.is_(None),
+                    ),
+                )
+                .order_by(CanonicalItem.household_id.is_(None).asc())
             )
-            .order_by(CanonicalItem.household_id.is_(None).asc())
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     if existing_by_slug is not None:
         cur = existing_by_slug
         seen: set[UUID] = set()
-        while (not cur.is_active or cur.merged_into_id is not None) and cur.merged_into_id is not None:
+        while (
+            not cur.is_active or cur.merged_into_id is not None
+        ) and cur.merged_into_id is not None:
             if cur.id in seen:
                 break
             seen.add(cur.id)

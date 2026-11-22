@@ -7,7 +7,6 @@ import time
 from collections import Counter, defaultdict
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -17,7 +16,7 @@ from sqlalchemy.orm import selectinload
 
 from app.modules.cooking.models import CookingPlan
 from app.modules.inventory.models import CanonicalItem, IngredientMapping, InventoryLot, StockLedger
-from app.modules.purchases.models import Purchase, PurchaseItem
+from app.modules.purchases.models import Purchase
 from app.modules.replenishment.models import ReplenishmentFeedback
 from app.modules.replenishment.schemas import (
     ConfidenceLevel,
@@ -36,7 +35,9 @@ _RECOMMENDATIONS_CACHE: dict[str, tuple[float, ReplenishmentRecommendationsRespo
 
 def invalidate_replenishment_cache(household_id: UUID | str) -> None:
     prefix = f"{household_id}:"
-    for k in [key for key in _RECOMMENDATIONS_CACHE if key == str(household_id) or key.startswith(prefix)]:
+    for k in [
+        key for key in _RECOMMENDATIONS_CACHE if key == str(household_id) or key.startswith(prefix)
+    ]:
         _RECOMMENDATIONS_CACHE.pop(k, None)
 
 
@@ -129,9 +130,7 @@ def are_units_compatible(unit_a: str | None, unit_b: str | None) -> bool:
         return True
     if ua in _MASS_UNITS and ub in _MASS_UNITS:
         return True
-    if ua in _VOL_UNITS and ub in _VOL_UNITS:
-        return True
-    return False
+    return bool(ua in _VOL_UNITS and ub in _VOL_UNITS)
 
 
 def convert_compatible_quantity(
@@ -167,7 +166,8 @@ def _check_canonical_eligibility(
         return (
             False,
             "excluded_non_food",
-            f"'{item.name}' is classified or detected as non-food/prepared-food and excluded from grocery replenishment.",
+            f"'{item.name}' is classified or detected as non-food/prepared-food and "
+            "excluded from grocery replenishment.",
         )
 
     name = (item.name or "").strip()
@@ -175,7 +175,8 @@ def _check_canonical_eligibility(
         return (
             True,
             "uncertain_identity",
-            f"'{name}' appears to have OCR-garbled or merged text; confident frequency predictions are suppressed.",
+            f"'{name}' appears to have OCR-garbled or merged text; confident frequency "
+            "predictions are suppressed.",
         )
 
     return True, None, None
@@ -206,24 +207,28 @@ async def compute_replenishment_recommendations(
 
     # 1. Load canonical items for household
     ci_rows = (
-        await db.execute(
-            select(CanonicalItem).where(CanonicalItem.household_id == household_id)
-        )
-    ).scalars().all()
+        (await db.execute(select(CanonicalItem).where(CanonicalItem.household_id == household_id)))
+        .scalars()
+        .all()
+    )
     canonical_by_id: dict[UUID, CanonicalItem] = {c.id: c for c in ci_rows}
 
     # 2. Load confirmed non-restaurant purchases & items
     purchase_rows = (
-        await db.execute(
-            select(Purchase)
-            .options(selectinload(Purchase.items))
-            .where(
-                Purchase.household_id == household_id,
-                Purchase.status == "confirmed",
+        (
+            await db.execute(
+                select(Purchase)
+                .options(selectinload(Purchase.items))
+                .where(
+                    Purchase.household_id == household_id,
+                    Purchase.status == "confirmed",
+                )
+                .order_by(Purchase.purchased_on.asc(), Purchase.created_at.asc())
             )
-            .order_by(Purchase.purchased_on.asc(), Purchase.created_at.asc())
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     purchases_by_item: dict[UUID, list[tuple[date, float, str, str | None]]] = defaultdict(list)
     for p in purchase_rows:
@@ -249,23 +254,27 @@ async def compute_replenishment_recommendations(
 
     # 3. Load inventory lots
     lot_rows = (
-        await db.execute(
-            select(InventoryLot).where(InventoryLot.household_id == household_id)
-        )
-    ).scalars().all()
+        (await db.execute(select(InventoryLot).where(InventoryLot.household_id == household_id)))
+        .scalars()
+        .all()
+    )
     lots_by_item: dict[UUID, list[InventoryLot]] = defaultdict(list)
     for lot in lot_rows:
         lots_by_item[lot.canonical_item_id].append(lot)
 
     # 4. Load planned cooking-plan reservations (exclude completed/cancelled)
     planned_cooking = (
-        await db.execute(
-            select(CookingPlan).where(
-                CookingPlan.household_id == household_id,
-                CookingPlan.status == "planned",
+        (
+            await db.execute(
+                select(CookingPlan).where(
+                    CookingPlan.household_id == household_id,
+                    CookingPlan.status == "planned",
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     reserved_by_item: dict[UUID, list[tuple[float, str]]] = defaultdict(list)
     for plan in planned_cooking:
         for ing in plan.ingredients or []:
@@ -284,24 +293,32 @@ async def compute_replenishment_recommendations(
 
     # 5. Load stock ledger movements for actual consumption velocity
     ledger_rows = (
-        await db.execute(
-            select(StockLedger)
-            .where(StockLedger.household_id == household_id)
-            .order_by(StockLedger.created_at.asc())
+        (
+            await db.execute(
+                select(StockLedger)
+                .where(StockLedger.household_id == household_id)
+                .order_by(StockLedger.created_at.asc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     ledger_by_item: dict[UUID, list[StockLedger]] = defaultdict(list)
     for entry in ledger_rows:
         ledger_by_item[entry.canonical_item_id].append(entry)
 
     # 6. Load replenishment feedback
     fb_rows = (
-        await db.execute(
-            select(ReplenishmentFeedback)
-            .where(ReplenishmentFeedback.household_id == household_id)
-            .order_by(ReplenishmentFeedback.created_at.desc())
+        (
+            await db.execute(
+                select(ReplenishmentFeedback)
+                .where(ReplenishmentFeedback.household_id == household_id)
+                .order_by(ReplenishmentFeedback.created_at.desc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     active_fb_by_item: dict[UUID, list[ReplenishmentFeedback]] = defaultdict(list)
     dismissal_count_by_item: dict[UUID, int] = defaultdict(int)
     for fb in fb_rows:
@@ -320,19 +337,23 @@ async def compute_replenishment_recommendations(
 
     candidate_ids = sorted(
         set(canonical_by_id.keys()) | set(purchases_by_item.keys()) | set(lots_by_item.keys()),
-        key=lambda u: (canonical_by_id[u].name.lower() if u in canonical_by_id else str(u)),
+        key=lambda u: canonical_by_id[u].name.lower() if u in canonical_by_id else str(u),
     )
 
     # Precompute confirmed ingredient mappings and per-ingredient usable stock (no double-counting)
     confirmed_maps = (
-        await db.execute(
-            select(IngredientMapping).where(
-                IngredientMapping.user_confirmed.is_(True),
-                (IngredientMapping.household_id == household_id)
-                | (IngredientMapping.household_id.is_(None)),
+        (
+            await db.execute(
+                select(IngredientMapping).where(
+                    IngredientMapping.user_confirmed.is_(True),
+                    (IngredientMapping.household_id == household_id)
+                    | (IngredientMapping.household_id.is_(None)),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     item_to_ing: dict[UUID, UUID] = {}
     for m in confirmed_maps:
         if m.household_id == household_id or m.canonical_item_id not in item_to_ing:
@@ -412,8 +433,10 @@ async def compute_replenishment_recommendations(
                 daily_qty_by_date[p_date] += conv
                 compatible_qtys.append(conv)
 
-        distinct_dates = sorted(daily_qty_by_date.keys()) if daily_qty_by_date else sorted(
-            {p[0] for p in item_purchases}
+        distinct_dates = (
+            sorted(daily_qty_by_date.keys())
+            if daily_qty_by_date
+            else sorted({p[0] for p in item_purchases})
         )
         purchase_count = len(item_purchases)
 
@@ -456,12 +479,17 @@ async def compute_replenishment_recommendations(
         elif len(distinct_dates) < 2 or median_interval is None:
             confidence = "insufficient_data"
             confidence_reason = (
-                f"Only {purchase_count} confirmed purchase(s); at least 2 separate purchase dates needed."
+                f"Only {purchase_count} confirmed purchase(s); at least 2 separate purchase "
+                "dates needed."
             )
         elif len(distinct_dates) == 2:
             confidence = "low"
             confidence_reason = "Based on 2 purchase dates; more history will improve accuracy."
-        elif interval_std is not None and median_interval > 0 and interval_std > 0.5 * median_interval:
+        elif (
+            interval_std is not None
+            and median_interval > 0
+            and interval_std > 0.5 * median_interval
+        ):
             confidence = "low"
             confidence_reason = "Purchase intervals vary widely across trips."
         elif len(distinct_dates) >= 5 and (
@@ -491,9 +519,10 @@ async def compute_replenishment_recommendations(
                 expired_qty += conv_lot
                 continue
             available_qty += conv_lot
-            if lot.expires_on is not None:
-                if earliest_expires is None or lot.expires_on < earliest_expires:
-                    earliest_expires = lot.expires_on
+            if lot.expires_on is not None and (
+                earliest_expires is None or lot.expires_on < earliest_expires
+            ):
+                earliest_expires = lot.expires_on
 
         reserved_qty = 0.0
         for r_qty, r_unit in reserved_by_item.get(cid, []):
@@ -524,7 +553,9 @@ async def compute_replenishment_recommendations(
             conv_d = convert_compatible_quantity(delta_abs, entry.base_unit, base_unit)
             if conv_d is None:
                 unit_mismatch = True
-                unit_notes.append(f"Ledger {delta_abs} {entry.base_unit} incompatible with {base_unit}.")
+                unit_notes.append(
+                    f"Ledger {delta_abs} {entry.base_unit} incompatible with {base_unit}."
+                )
                 continue
             e_date = _to_local_date(entry.created_at, local_tz, today_local)
             if earliest_consumption_date is None or e_date < earliest_consumption_date:
@@ -552,7 +583,9 @@ async def compute_replenishment_recommendations(
 
         if confidence == "high" and total_consumed <= 0:
             confidence = "medium"
-            confidence_reason = "Consistent purchase dates, but no verified consumption records yet."
+            confidence_reason = (
+                "Consistent purchase dates, but no verified consumption records yet."
+            )
 
         # Ingredient-level usable stock when item has a confirmed IngredientMapping
         ingredient_usable_qty: float | None = None
@@ -568,7 +601,9 @@ async def compute_replenishment_recommendations(
             if all_ing_compat:
                 ingredient_usable_qty = round(ing_sum, 3)
 
-        effective_usable_qty = ingredient_usable_qty if ingredient_usable_qty is not None else usable_qty
+        effective_usable_qty = (
+            ingredient_usable_qty if ingredient_usable_qty is not None else usable_qty
+        )
 
         if unit_mismatch:
             stock_status: StockStatus = "unknown"
@@ -596,7 +631,9 @@ async def compute_replenishment_recommendations(
         if is_high_confidence and (predicted_requirement is None or predicted_requirement <= 0):
             confidence = "medium"
             is_high_confidence = False
-            confidence_reason = "Consistent purchase dates, but insufficient verified consumption velocity."
+            confidence_reason = (
+                "Consistent purchase dates, but insufficient verified consumption velocity."
+            )
 
         net_requirement: float | None = (
             round(predicted_requirement - effective_usable_qty, 3)
@@ -611,19 +648,27 @@ async def compute_replenishment_recommendations(
         suppression_reason: str | None = None
 
         if unit_normalized and stock_status != "unknown":
-            if is_high_confidence and predicted_requirement is not None and net_requirement is not None:
+            if (
+                is_high_confidence
+                and predicted_requirement is not None
+                and net_requirement is not None
+            ):
                 if net_requirement > 0:
-                    recommended_qty = _round_to_known_packaging(net_requirement, modal_qty, base_unit)
+                    recommended_qty = _round_to_known_packaging(
+                        net_requirement, modal_qty, base_unit
+                    )
                     quantity_basis = "consumption_prediction"
                     evidence_basis = "consumption_based"
                 else:
                     suppression_reason = (
                         f"Sufficient usable stock ({effective_usable_qty:g} {base_unit}) covers "
-                        f"{prediction_horizon_days}-day predicted demand ({predicted_requirement:g} {base_unit})."
+                        f"{prediction_horizon_days}-day predicted demand "
+                        f"({predicted_requirement:g} {base_unit})."
                     )
             else:
                 suppression_reason = (
-                    f"Confidence is {confidence}; only HIGH-confidence, consumption-verified items are eligible."
+                    f"Confidence is {confidence}; only HIGH-confidence, consumption-verified "
+                    "items are eligible."
                 )
         else:
             suppression_reason = "Unknown unit or incompatible unit mismatch."
@@ -665,10 +710,10 @@ async def compute_replenishment_recommendations(
 
         is_suppressed = False
         if latest_fb is not None:
-            if latest_fb.action in ("dismissed", "not_relevant"):
-                is_suppressed = True
-            elif latest_fb.action == "remind_later" and (
-                latest_fb.remind_after is None or latest_fb.remind_after > today_local
+            if (
+                latest_fb.action in ("dismissed", "not_relevant")
+                or latest_fb.action == "remind_later"
+                and (latest_fb.remind_after is None or latest_fb.remind_after > today_local)
             ):
                 is_suppressed = True
             elif latest_fb.action == "already_have_enough":
@@ -690,31 +735,46 @@ async def compute_replenishment_recommendations(
         elif not is_actionable_eligible:
             group = "regular_purchases"
             if unit_mismatch or not unit_normalized:
-                reason = "Unit mismatch or unnormalized unit detected; clarify units before recommending."
+                reason = (
+                    "Unit mismatch or unnormalized unit detected; clarify units before "
+                    "recommending."
+                )
             elif usable_qty <= 0:
-                reason = "Out of stock with insufficient demand history or user target; no purchase quantity guessed."
+                reason = (
+                    "Out of stock with insufficient demand history or user target; "
+                    "no purchase quantity guessed."
+                )
             else:
-                reason = f"{c_item.name} has {usable_qty:g} {base_unit} in stock; insufficient history for a recommendation."
+                reason = (
+                    f"{c_item.name} has {usable_qty:g} {base_unit} in stock; insufficient "
+                    "history for a recommendation."
+                )
         elif stock_status == "depleted":
             group = "buy_now"
             if interval_txt:
-                reason = f"{c_item.name} is depleted. Your household usually purchases it {interval_txt}."
+                reason = (
+                    f"{c_item.name} is depleted. Your household usually purchases it "
+                    f"{interval_txt}."
+                )
             else:
                 reason = f"{c_item.name} is depleted based on recorded inventory lots."
         elif stock_status == "low_stock":
             group = "buy_now"
             reason = (
-                f"{c_item.name} is below the configured minimum ({usable_qty:g} {base_unit} left vs {threshold:g} {base_unit})."
+                f"{c_item.name} is below the configured minimum ({usable_qty:g} {base_unit} "
+                f"left vs {threshold:g} {base_unit})."
             )
         elif est_days_remaining is not None and est_days_remaining <= 2.0:
             group = "buy_now"
             reason = (
-                f"{c_item.name}: approximately {est_days_remaining:g} days of stock remaining based on recorded consumption."
+                f"{c_item.name}: approximately {est_days_remaining:g} days of stock remaining "
+                "based on recorded consumption."
             )
         elif stock_status == "running_out_soon":
             group = "buy_soon"
             reason = (
-                f"{c_item.name}: approximately {est_days_remaining:g} days of stock remaining based on recorded consumption."
+                f"{c_item.name}: approximately {est_days_remaining:g} days of stock remaining "
+                "based on recorded consumption."
             )
         elif (
             est_next_date is not None
@@ -725,17 +785,20 @@ async def compute_replenishment_recommendations(
             group = "buy_soon"
             days_ago = (today_local - last_purchase_date).days if last_purchase_date else 0
             reason = (
-                f"{c_item.name} is usually purchased {interval_txt}. Last purchase was {days_ago} days ago."
+                f"{c_item.name} is usually purchased {interval_txt}. Last purchase was "
+                f"{days_ago} days ago."
             )
         elif purchase_count >= 2 or stock_status == "adequate":
             group = "regular_purchases"
             if interval_txt and last_txt:
                 reason = (
-                    f"{c_item.name} is purchased {interval_txt} (last: {last_txt}); {usable_qty:g} {base_unit} remaining."
+                    f"{c_item.name} is purchased {interval_txt} (last: {last_txt}); "
+                    f"{usable_qty:g} {base_unit} remaining."
                 )
             else:
                 reason = (
-                    f"{c_item.name} has {usable_qty:g} {base_unit} in stock; insufficient repeat history for interval prediction."
+                    f"{c_item.name} has {usable_qty:g} {base_unit} in stock; insufficient "
+                    "repeat history for interval prediction."
                 )
         else:
             group = "regular_purchases"

@@ -1,4 +1,6 @@
-"""Regression tests for Aggarwal Traders receipt OCR extraction, noise resilience, and draft isolation."""
+"""Regression tests for Aggarwal Traders receipt OCR extraction, noise resilience, and draft
+isolation.
+"""
 
 from __future__ import annotations
 
@@ -19,7 +21,9 @@ def _make_dummy_png(tag: str = "L012633") -> bytes:
     d = ImageDraw.Draw(img)
     font = ImageFont.load_default(size=24)
     for idx in range(12):
-        d.text((40, 40 + idx * 60), f"AGGARWAL TRADERS {tag} Line {idx}", fill=(20, 20, 20), font=font)
+        d.text(
+            (40, 40 + idx * 60), f"AGGARWAL TRADERS {tag} Line {idx}", fill=(20, 20, 20), font=font
+        )
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
@@ -41,7 +45,14 @@ def _aggarwal_l012633_boxes() -> list[OcrTokenBox]:
     ]
     boxes: list[OcrTokenBox] = [
         OcrTokenBox(text="AGGARWAL TRADERS", confidence=0.98, x=0.25, y=0.05, w=0.50, h=0.03),
-        OcrTokenBox(text="D-173 West Vinod Nagar Mandawali, Delhi-110092", confidence=0.95, x=0.10, y=0.09, w=0.80, h=0.025),
+        OcrTokenBox(
+            text="D-173 West Vinod Nagar Mandawali, Delhi-110092",
+            confidence=0.95,
+            x=0.10,
+            y=0.09,
+            w=0.80,
+            h=0.025,
+        ),
         OcrTokenBox(text="Bill No. L012633", confidence=0.98, x=0.55, y=0.14, w=0.35, h=0.025),
         OcrTokenBox(text="Date: 08/10/2026", confidence=0.98, x=0.55, y=0.17, w=0.35, h=0.025),
         OcrTokenBox(text="Time: 10:40", confidence=0.98, x=0.10, y=0.17, w=0.25, h=0.025),
@@ -54,23 +65,31 @@ def _aggarwal_l012633_boxes() -> list[OcrTokenBox]:
     ]
     y = 0.27
     for name, qty, unit, rate, amt in rows:
-        boxes.extend([
-            OcrTokenBox(text=name, confidence=0.95, x=0.08, y=y, w=0.30, h=0.024),
-            OcrTokenBox(text=qty, confidence=0.95, x=0.45, y=y, w=0.08, h=0.024),
-            OcrTokenBox(text=unit, confidence=0.95, x=0.55, y=y, w=0.08, h=0.024),
-            OcrTokenBox(text=rate, confidence=0.95, x=0.66, y=y, w=0.08, h=0.024),
-            OcrTokenBox(text=amt, confidence=0.95, x=0.78, y=y, w=0.12, h=0.024),
-        ])
+        boxes.extend(
+            [
+                OcrTokenBox(text=name, confidence=0.95, x=0.08, y=y, w=0.30, h=0.024),
+                OcrTokenBox(text=qty, confidence=0.95, x=0.45, y=y, w=0.08, h=0.024),
+                OcrTokenBox(text=unit, confidence=0.95, x=0.55, y=y, w=0.08, h=0.024),
+                OcrTokenBox(text=rate, confidence=0.95, x=0.66, y=y, w=0.08, h=0.024),
+                OcrTokenBox(text=amt, confidence=0.95, x=0.78, y=y, w=0.12, h=0.024),
+            ]
+        )
         y += 0.04
     # Section divider & crossed-out line & footer & handwritten annotation near total
-    boxes.extend([
-        OcrTokenBox(text="DRY FRUITS=====>", confidence=0.90, x=0.08, y=0.385, w=0.30, h=0.02),
-        OcrTokenBox(text="~~Cancelled Item~~", confidence=0.60, x=0.08, y=0.67, w=0.25, h=0.02),
-        OcrTokenBox(text="Item Qty: 10", confidence=0.95, x=0.08, y=0.72, w=0.25, h=0.025),
-        OcrTokenBox(text="Round off: 0.00", confidence=0.95, x=0.50, y=0.76, w=0.35, h=0.025),
-        OcrTokenBox(text="G.TOTAL : - 3459.00", confidence=0.98, x=0.45, y=0.80, w=0.45, h=0.03),
-        OcrTokenBox(text="3500", confidence=0.45, x=0.91, y=0.81, w=0.06, h=0.02),  # handwritten margin note
-    ])
+    boxes.extend(
+        [
+            OcrTokenBox(text="DRY FRUITS=====>", confidence=0.90, x=0.08, y=0.385, w=0.30, h=0.02),
+            OcrTokenBox(text="~~Cancelled Item~~", confidence=0.60, x=0.08, y=0.67, w=0.25, h=0.02),
+            OcrTokenBox(text="Item Qty: 10", confidence=0.95, x=0.08, y=0.72, w=0.25, h=0.025),
+            OcrTokenBox(text="Round off: 0.00", confidence=0.95, x=0.50, y=0.76, w=0.35, h=0.025),
+            OcrTokenBox(
+                text="G.TOTAL : - 3459.00", confidence=0.98, x=0.45, y=0.80, w=0.45, h=0.03
+            ),
+            OcrTokenBox(
+                text="3500", confidence=0.45, x=0.91, y=0.81, w=0.06, h=0.02
+            ),  # handwritten margin note
+        ]
+    )
     return boxes
 
 
@@ -78,14 +97,18 @@ def _aggarwal_l012633_boxes() -> list[OcrTokenBox]:
 async def test_aggarwal_l012633_exact_extraction_and_noise_resilience(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify exact AGGARWAL TRADERS L012633 extraction: 10 items, ₹3,459, 0 mismatch, ignores dividers/crossed-out/handwritten notes."""
+    """Verify exact AGGARWAL TRADERS L012633 extraction: 10 items, ₹3,459, 0 mismatch, ignores
+    dividers/crossed-out/handwritten notes.
+    """
     # Ensure parse_inr_to_paise never concatenates across currency symbols like '110$110.00'
     assert parse_inr_to_paise("110$110.00") is None
 
     class _MockVision:
         name = "apple_vision_ocrmac"
+
         def is_available(self) -> bool:
             return True
+
         def recognize_image(self, _png_bytes: bytes, *, page: int = 1) -> RawOcrOutput:
             boxes = _aggarwal_l012633_boxes()
             return RawOcrOutput(
@@ -112,7 +135,9 @@ async def test_sequential_receipt_uploads_and_draft_reopen_no_stale_leakage(
     jwks_provider: EphemeralJWKSProvider,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify uploading L011139 (with 110$110.00 noise) then L012633 isolates each draft and preserves reopened values."""
+    """Verify uploading L011139 (with 110$110.00 noise) then L012633 isolates each draft and
+    preserves reopened values.
+    """
     token = jwks_provider.make_token(sub="user_ocr_seq", email="ocrseq@example.com", name="Seq")
     headers = {"Authorization": f"Bearer {token}"}
     me = await client.get("/api/v1/auth/me", headers=headers)
@@ -138,18 +163,24 @@ async def test_sequential_receipt_uploads_and_draft_reopen_no_stale_leakage(
 
     class _MockVision:
         name = "apple_vision_ocrmac"
+
         def is_available(self) -> bool:
             return True
+
         def recognize_image(self, _png_bytes: bytes, *, page: int = 1) -> RawOcrOutput:
             b = current_boxes[0]
-            return RawOcrOutput(adapter_name=self.name, boxes=b, raw_text="\n".join(x.text for x in b))
+            return RawOcrOutput(
+                adapter_name=self.name, boxes=b, raw_text="\n".join(x.text for x in b)
+            )
 
     monkeypatch.setattr("app.infra.ocr.pipeline._select_local_ocr_provider", lambda: _MockVision())
     png1 = _make_dummy_png("L011139")
     png2 = _make_dummy_png("L012633")
 
     # Upload 1: L011139
-    r1 = await client.post("/api/v1/purchases/ocr", headers=headers, files={"file": ("r1.png", png1, "image/png")})
+    r1 = await client.post(
+        "/api/v1/purchases/ocr", headers=headers, files={"file": ("r1.png", png1, "image/png")}
+    )
     assert r1.status_code == 201
     d1 = r1.json()
     assert d1["receipt_number"] == "L011139"
@@ -161,7 +192,9 @@ async def test_sequential_receipt_uploads_and_draft_reopen_no_stale_leakage(
 
     # Upload 2: L012633 immediately after
     current_boxes[0] = _aggarwal_l012633_boxes()
-    r2 = await client.post("/api/v1/purchases/ocr", headers=headers, files={"file": ("r2.png", png2, "image/png")})
+    r2 = await client.post(
+        "/api/v1/purchases/ocr", headers=headers, files={"file": ("r2.png", png2, "image/png")}
+    )
     assert r2.status_code == 201
     d2 = r2.json()
     assert d2["id"] != d1["id"]
@@ -180,7 +213,11 @@ async def test_sequential_receipt_uploads_and_draft_reopen_no_stale_leakage(
     # Upload 3: Discarding d2 and re-uploading the same image creates a fresh unique draft
     del_res = await client.delete(f"/api/v1/purchases/drafts/{d2['id']}", headers=headers)
     assert del_res.status_code == 204
-    r3 = await client.post("/api/v1/purchases/ocr", headers=headers, files={"file": ("r2_again.png", png2, "image/png")})
+    r3 = await client.post(
+        "/api/v1/purchases/ocr",
+        headers=headers,
+        files={"file": ("r2_again.png", png2, "image/png")},
+    )
     assert r3.status_code == 201
     assert r3.json()["id"] != d2["id"]
 
@@ -190,7 +227,9 @@ async def test_confirming_grocery_with_ambiguous_review_item_creates_no_outside_
     client: httpx.AsyncClient,
     jwks_provider: EphemeralJWKSProvider,
 ) -> None:
-    """Confirming a grocery purchase with an ambiguous Needs Review item must not create a FoodConsumption meal record."""
+    """Confirming a grocery purchase with an ambiguous Needs Review item must not create a
+    FoodConsumption meal record.
+    """
     token = jwks_provider.make_token(sub="user_ambig_groc", email="ambig@example.com", name="Ambig")
     headers = {"Authorization": f"Bearer {token}"}
     me = await client.get("/api/v1/auth/me", headers=headers)
@@ -227,7 +266,9 @@ async def test_confirming_grocery_with_ambiguous_review_item_creates_no_outside_
         },
     )
     assert draft.status_code == 201
-    confirm = await client.post(f"/api/v1/purchases/drafts/{draft.json()['id']}/confirm", headers=headers, json={})
+    confirm = await client.post(
+        f"/api/v1/purchases/drafts/{draft.json()['id']}/confirm", headers=headers, json={}
+    )
     assert confirm.status_code == 200
     assert confirm.json()["food_consumption"] is None
 
@@ -237,8 +278,12 @@ async def test_manual_edit_reclassifies_clears_warning_and_confirms_without_subt
     client: httpx.AsyncClient,
     jwks_provider: EphemeralJWKSProvider,
 ) -> None:
-    """Editing an ambiguous item name to 'Moong dhuli' with track_inventory=True clears stale warnings and confirms cleanly."""
-    token = jwks_provider.make_token(sub="user_reclass_clear", email="reclass@example.com", name="Reclass")
+    """Editing an ambiguous item name to 'Moong dhuli' with track_inventory=True clears stale
+    warnings and confirms cleanly.
+    """
+    token = jwks_provider.make_token(
+        sub="user_reclass_clear", email="reclass@example.com", name="Reclass"
+    )
     headers = {"Authorization": f"Bearer {token}"}
     me = await client.get("/api/v1/auth/me", headers=headers)
     headers["X-Household-Id"] = me.json()["active_household"]["id"]
@@ -271,7 +316,8 @@ async def test_manual_edit_reclassifies_clears_warning_and_confirms_without_subt
     assert draft.json()["items"][0]["classification_status"] == "ambiguous_review"
     assert draft.json()["items"][0]["review_reason"] is not None
 
-    # 2. Manually edit name -> 'Moong dhuli', check Add to Kitchen Inventory, and omit/clear subtotal_paise
+    # 2. Manually edit name -> 'Moong dhuli', check Add to Kitchen Inventory, and omit/clear
+    # subtotal_paise
     patched = await client.patch(
         f"/api/v1/purchases/drafts/{draft_id}",
         headers=headers,
@@ -304,7 +350,9 @@ async def test_manual_edit_reclassifies_clears_warning_and_confirms_without_subt
     assert p_item["warnings"] == []
 
     # 3. Confirm succeeds -> creates inventory lot and no outside-food meal record
-    confirm = await client.post(f"/api/v1/purchases/drafts/{draft_id}/confirm", headers=headers, json={})
+    confirm = await client.post(
+        f"/api/v1/purchases/drafts/{draft_id}/confirm", headers=headers, json={}
+    )
     assert confirm.status_code == 200
     c_data = confirm.json()
     assert len(c_data["created_lots"]) == 1
@@ -313,7 +361,9 @@ async def test_manual_edit_reclassifies_clears_warning_and_confirms_without_subt
 
 @pytest.mark.asyncio
 async def test_aggarwal_l011139_exact_10_rows_recovery_no_headings_or_summary() -> None:
-    """Exact AGGARWAL TRADERS L011139 (17/09/2026, ₹2,260) fixture: 10 rows, no DRY FRUITS/DAL/Item Qty, ₹0 mismatch."""
+    """Exact AGGARWAL TRADERS L011139 (17/09/2026, ₹2,260) fixture: 10 rows, no DRY FRUITS/DAL/Item
+    Qty, ₹0 mismatch.
+    """
     raw_text = "\n".join(
         [
             "AGGARWAL TRADERS",
@@ -349,7 +399,10 @@ async def test_aggarwal_l011139_exact_10_rows_recovery_no_headings_or_summary() 
     assert len(parsed.lines) == 10
 
     names = [ln.name for ln in parsed.lines]
-    assert not any("DRY FRUITS" in n.upper() or "DAL =====" in n.upper() or "ITEM QTY" in n.upper() for n in names)
+    assert not any(
+        "DRY FRUITS" in n.upper() or "DAL =====" in n.upper() or "ITEM QTY" in n.upper()
+        for n in names
+    )
 
     expected = [
         ("CHINI DF", 2000.0, "g", 5300, 10600),
@@ -363,7 +416,9 @@ async def test_aggarwal_l011139_exact_10_rows_recovery_no_headings_or_summary() 
         ("URAD, DHULI", 1000.0, "g", 14000, 14000),
         ("Moong Dhyli", 1000.0, "g", 12000, 12000),
     ]
-    for ln, (exp_name, exp_qty, exp_unit, exp_rate, exp_total) in zip(parsed.lines, expected, strict=True):
+    for ln, (exp_name, exp_qty, exp_unit, exp_rate, exp_total) in zip(
+        parsed.lines, expected, strict=True
+    ):
         assert ln.name == exp_name
         assert ln.normalized_qty == exp_qty
         assert ln.base_unit == exp_unit
@@ -373,7 +428,8 @@ async def test_aggarwal_l011139_exact_10_rows_recovery_no_headings_or_summary() 
     assert sum(ln.total_paise or 0 for ln in parsed.lines) == 226000
     assert parsed.math_reconciled is True
 
-    # LAL MALKA has OCR rate ₹34 vs printed ₹188 -> flagged with implied rate ₹94/kg without overwriting
+    # LAL MALKA has OCR rate ₹34 vs printed ₹188 -> flagged with implied rate ₹94/kg without
+    # overwriting
     lal_malka = parsed.lines[4]
     assert lal_malka.name == "LAL MALKA"
     assert lal_malka.unit_price_paise == 3400
@@ -392,7 +448,9 @@ async def test_aggarwal_l011139_exact_10_rows_recovery_no_headings_or_summary() 
 
 @pytest.mark.asyncio
 async def test_aggarwal_l015174_exact_13_rows_annotated_total_and_grid_misalignment() -> None:
-    """AGGARWAL TRADERS L015174 (18/11/2026): recovers all 13 rows, skips headings, flags 5319 vs 5119."""
+    """AGGARWAL TRADERS L015174 (18/11/2026): recovers all 13 rows, skips headings, flags 5319 vs
+    5119.
+    """
     raw_text = "\n".join(
         [
             "AGGARWAL TRADERS",
@@ -440,38 +498,65 @@ async def test_aggarwal_l015174_exact_13_rows_annotated_total_and_grid_misalignm
     assert any("5319.00" in w and "5119.00" in w for w in parsed.warnings)
 
     names = [ln.name for ln in parsed.lines]
-    assert not any("DRY FRUITS" in n.upper() or "DAL -=" in n.upper() or "ATEM QTY" in n.upper() or "G. AL" in n.upper() for n in names)
+    assert not any(
+        "DRY FRUITS" in n.upper()
+        or "DAL -=" in n.upper()
+        or "ATEM QTY" in n.upper()
+        or "G. AL" in n.upper()
+        for n in names
+    )
     # Two AKHROT products with different rates preserved distinctly
     akhrot_totals = [ln.total_paise for ln in parsed.lines if "AKHROT" in ln.name.upper()]
     assert akhrot_totals == [160000, 100000]
 
 
 def test_spatial_table_grid_line_inside_description_cannot_drop_rows() -> None:
-    """An internal S.No.|Description vertical line at x=0.1317 must not collapse Description and drop 12 of 13 rows."""
+    """An internal S.No.|Description vertical line at x=0.1317 must not collapse Description and
+    drop 12 of 13 rows.
+    """
     from app.infra.ocr.schemas import OcrTokenBox
     from app.infra.ocr.spatial_parser import parse_receipt_text_and_boxes
     from app.infra.ocr.validation import validate_extracted_receipt
 
     boxes = [
-        # Header: S. Description at x=[0.03..0.29], ATY, at [0.46..0.52], UNIT Rate at [0.55..0.72], Amt at [0.78..0.88]
-        OcrTokenBox(text="S. Description", x=0.03, y=0.20, width=0.26, height=0.02, confidence=0.95, page=1),
+        # Header: S. Description at x=[0.03..0.29], ATY, at [0.46..0.52], UNIT Rate at
+        # [0.55..0.72], Amt at [0.78..0.88]
+        OcrTokenBox(
+            text="S. Description", x=0.03, y=0.20, width=0.26, height=0.02, confidence=0.95, page=1
+        ),
         OcrTokenBox(text="ATY,", x=0.46, y=0.20, width=0.06, height=0.02, confidence=0.90, page=1),
-        OcrTokenBox(text="UNIT Rate", x=0.55, y=0.20, width=0.17, height=0.02, confidence=0.95, page=1),
+        OcrTokenBox(
+            text="UNIT Rate", x=0.55, y=0.20, width=0.17, height=0.02, confidence=0.95, page=1
+        ),
         OcrTokenBox(text="Amt", x=0.78, y=0.20, width=0.10, height=0.02, confidence=0.95, page=1),
         # Row 1: LALCHAWAL (center 0.15 > 0.1317)
-        OcrTokenBox(text="1 LALCHAWAL", x=0.03, y=0.25, width=0.24, height=0.02, confidence=0.95, page=1),
+        OcrTokenBox(
+            text="1 LALCHAWAL", x=0.03, y=0.25, width=0.24, height=0.02, confidence=0.95, page=1
+        ),
         OcrTokenBox(text="2", x=0.47, y=0.25, width=0.03, height=0.02, confidence=0.95, page=1),
-        OcrTokenBox(text="KG 200", x=0.55, y=0.25, width=0.14, height=0.02, confidence=0.95, page=1),
-        OcrTokenBox(text="400.00", x=0.79, y=0.25, width=0.10, height=0.02, confidence=0.95, page=1),
+        OcrTokenBox(
+            text="KG 200", x=0.55, y=0.25, width=0.14, height=0.02, confidence=0.95, page=1
+        ),
+        OcrTokenBox(
+            text="400.00", x=0.79, y=0.25, width=0.10, height=0.02, confidence=0.95, page=1
+        ),
         # Row 2: 40 CHAWAL (center 0.145 > 0.1317)
-        OcrTokenBox(text="2 40 CHAWAL", x=0.03, y=0.29, width=0.23, height=0.02, confidence=0.95, page=1),
+        OcrTokenBox(
+            text="2 40 CHAWAL", x=0.03, y=0.29, width=0.23, height=0.02, confidence=0.95, page=1
+        ),
         OcrTokenBox(text="5", x=0.47, y=0.29, width=0.03, height=0.02, confidence=0.95, page=1),
         OcrTokenBox(text="KG 40", x=0.55, y=0.29, width=0.12, height=0.02, confidence=0.95, page=1),
-        OcrTokenBox(text="200.00", x=0.79, y=0.29, width=0.10, height=0.02, confidence=0.95, page=1),
+        OcrTokenBox(
+            text="200.00", x=0.79, y=0.29, width=0.10, height=0.02, confidence=0.95, page=1
+        ),
         # Row 3: To Matar (center 0.125 < 0.1317)
-        OcrTokenBox(text="To Matar", x=0.03, y=0.33, width=0.19, height=0.02, confidence=0.95, page=1),
+        OcrTokenBox(
+            text="To Matar", x=0.03, y=0.33, width=0.19, height=0.02, confidence=0.95, page=1
+        ),
         OcrTokenBox(text="1", x=0.47, y=0.33, width=0.03, height=0.02, confidence=0.95, page=1),
-        OcrTokenBox(text="KGS 90", x=0.55, y=0.33, width=0.14, height=0.02, confidence=0.95, page=1),
+        OcrTokenBox(
+            text="KGS 90", x=0.55, y=0.33, width=0.14, height=0.02, confidence=0.95, page=1
+        ),
         OcrTokenBox(text="90.00", x=0.79, y=0.33, width=0.10, height=0.02, confidence=0.95, page=1),
     ]
     res = parse_receipt_text_and_boxes(
@@ -490,8 +575,12 @@ def test_spatial_table_grid_line_inside_description_cannot_drop_rows() -> None:
 
 
 @pytest.mark.asyncio
-async def test_crossout_explicit_cancelled_vs_uncertain_and_incomplete_extraction_safeguards() -> None:
-    """Genuine cancelled rows are excluded; uncertain cross-outs are preserved for review; 1-row partial extraction is flagged."""
+async def test_crossout_explicit_cancelled_vs_uncertain_and_incomplete_extraction_safeguards() -> (
+    None
+):
+    """Genuine cancelled rows are excluded; uncertain cross-outs are preserved for review; 1-row
+    partial extraction is flagged.
+    """
     from app.infra.ocr.schemas import ExtractedReceipt, ExtractedReceiptLine
     from app.infra.ocr.validation import validate_extracted_receipt
 
@@ -519,7 +608,8 @@ async def test_crossout_explicit_cancelled_vs_uncertain_and_incomplete_extractio
     assert any("crossed-out" in w.lower() for w in badam.warnings)
     assert any("excluded 2 explicitly cancelled" in w.lower() for w in parsed.warnings)
 
-    # Incomplete extraction safeguard: 1 row recovered out of 13 candidates / qty 28 -> error & no trusted computed total
+    # Incomplete extraction safeguard: 1 row recovered out of 13 candidates / qty 28 -> error & no
+    # trusted computed total
     incomplete = validate_extracted_receipt(
         ExtractedReceipt(
             filename="partial.jpg",
@@ -545,7 +635,10 @@ async def test_crossout_explicit_cancelled_vs_uncertain_and_incomplete_extractio
     assert incomplete.math_reconciled is False
     assert incomplete.computed_total_paise is None
     assert incomplete.confidence <= 0.35
-    assert any(i.code == "INCOMPLETE_EXTRACTION" and i.severity == "error" for i in incomplete.validation_issues)
+    assert any(
+        i.code == "INCOMPLETE_EXTRACTION" and i.severity == "error"
+        for i in incomplete.validation_issues
+    )
 
     # Genuine single-item receipt is NOT flagged as incomplete
     genuine_one = validate_extracted_receipt(
@@ -571,4 +664,3 @@ async def test_crossout_explicit_cancelled_vs_uncertain_and_incomplete_extractio
     )
     assert not any(i.code == "INCOMPLETE_EXTRACTION" for i in genuine_one.validation_issues)
     assert genuine_one.math_reconciled is True
-

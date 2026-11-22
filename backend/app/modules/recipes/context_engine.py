@@ -40,7 +40,9 @@ def classify_meal_context(
     now_utc: datetime | None = None,
     timezone_name: str | None = "Asia/Kolkata",
 ) -> MealContext:
-    """Classify local time into Breakfast (6-11), Lunch (11-15), Snack (15-19), Dinner (19-23), or Flexible."""
+    """Classify local time into Breakfast (6-11), Lunch (11-15), Snack (15-19), Dinner (19-23), or
+    Flexible.
+    """
     tz_str = (timezone_name or "Asia/Kolkata").strip() or "Asia/Kolkata"
     try:
         tz = ZoneInfo(tz_str)
@@ -91,7 +93,9 @@ def classify_season_context(
     temperature_c: float | None = None,
     rainfall_mm: float | None = None,
 ) -> SeasonContext:
-    """Determine season from local date, refined by optional real weather metrics (never invented)."""
+    """Determine season from local date, refined by optional real weather metrics (never
+    invented).
+    """
     month = local_date.month
     if month in (3, 4, 5):
         season: SeasonName = "summer"
@@ -128,7 +132,10 @@ CONTEXTUAL_RECIPE_CATALOG: list[dict[str, Any]] = [
     {
         "recipe_id": "ctx-poha",
         "title": "Kanda Batata Poha",
-        "description": "Light flattened rice tempered with mustard seeds, onion, potato, turmeric, and peanuts.",
+        "description": (
+            "Light flattened rice tempered with mustard seeds, onion, potato, turmeric, and "
+            "peanuts."
+        ),
         "meal_types": ["breakfast", "snack", "flexible"],
         "cuisine": "Indian",
         "diet_tags": ["vegetarian", "vegan"],
@@ -152,7 +159,9 @@ CONTEXTUAL_RECIPE_CATALOG: list[dict[str, Any]] = [
     {
         "recipe_id": "ctx-upma",
         "title": "South Indian Vegetable Upma",
-        "description": "Warm roasted semolina cooked with tempered mustard seeds, onion, and spices.",
+        "description": (
+            "Warm roasted semolina cooked with tempered mustard seeds, onion, and spices."
+        ),
         "meal_types": ["breakfast", "flexible"],
         "cuisine": "South Indian",
         "diet_tags": ["vegetarian", "vegan"],
@@ -219,7 +228,9 @@ CONTEXTUAL_RECIPE_CATALOG: list[dict[str, Any]] = [
     {
         "recipe_id": "ctx-oats-porridge",
         "title": "Warm Oats & Almond Milk Porridge",
-        "description": "Creamy rolled oats simmered with milk, toasted almonds, and a touch of sweetness.",
+        "description": (
+            "Creamy rolled oats simmered with milk, toasted almonds, and a touch of sweetness."
+        ),
         "meal_types": ["breakfast", "flexible"],
         "cuisine": "Quick",
         "diet_tags": ["vegetarian"],
@@ -286,7 +297,9 @@ CONTEXTUAL_RECIPE_CATALOG: list[dict[str, Any]] = [
     {
         "recipe_id": "ctx-chole-rice",
         "title": "Spiced Chickpea Chole & Rice",
-        "description": "Hearty chickpea curry simmered in roasted spices, paired with steamed rice.",
+        "description": (
+            "Hearty chickpea curry simmered in roasted spices, paired with steamed rice."
+        ),
         "meal_types": ["lunch", "dinner"],
         "cuisine": "North Indian",
         "diet_tags": ["vegetarian", "vegan"],
@@ -500,11 +513,10 @@ def _passes_dietary_filter(
         n in ing_names for n in ("almond", "walnut", "peanut", "cashew")
     ):
         return False
-    if ("dairy_free" in restr_low or "lactose_free" in restr_low) and any(
-        d in ing_names for d in ("milk", "paneer", "curd", "ghee", "butter", "cheese")
-    ):
-        return False
-    return True
+    return not (
+        ("dairy_free" in restr_low or "lactose_free" in restr_low)
+        and any(d in ing_names for d in ("milk", "paneer", "curd", "ghee", "butter", "cheese"))
+    )
 
 
 def score_and_select_contextual_recipes(
@@ -518,7 +530,9 @@ def score_and_select_contextual_recipes(
     feedback_map: dict[str, str] | None = None,
     limit: int = 5,
 ) -> list[dict[str, Any]]:
-    """Rank and classify recipes using confirmed pantry stock, meal window, season, feedback, and user preferences."""
+    """Rank and classify recipes using confirmed pantry stock, meal window, season, feedback, and
+    user preferences.
+    """
     if not inventory_payload:
         return []
 
@@ -532,7 +546,11 @@ def score_and_select_contextual_recipes(
     restrictions = list(explicit_prefs.get("dietary_restrictions") or [])
     pref_cuisines = {
         c.strip().lower()
-        for c in (explicit_prefs.get("preferred_cuisines") or learned_prefs.get("preferred_cuisines") or [])
+        for c in (
+            explicit_prefs.get("preferred_cuisines")
+            or learned_prefs.get("preferred_cuisines")
+            or []
+        )
         if str(c).strip()
     }
     pref_meals = {
@@ -540,9 +558,13 @@ def score_and_select_contextual_recipes(
         for m in (explicit_prefs.get("preferred_meal_types") or [])
         if str(m).strip()
     }
-    max_prep = explicit_prefs.get("max_prep_minutes") or learned_prefs.get("preferred_max_cook_minutes")
+    max_prep = explicit_prefs.get("max_prep_minutes") or learned_prefs.get(
+        "preferred_max_cook_minutes"
+    )
     recent_low = {r.strip().lower() for r in recent_recipes if r.strip()}
-    disliked_low = {r.strip().lower() for r in (learned_prefs.get("disliked_dishes") or []) if str(r).strip()}
+    disliked_low = {
+        r.strip().lower() for r in (learned_prefs.get("disliked_dishes") or []) if str(r).strip()
+    }
     fb_by_id = feedback_map or {}
 
     scored: list[tuple[float, dict[str, Any]]] = []
@@ -587,9 +609,7 @@ def score_and_select_contextual_recipes(
         primary_meal = str(rec.get("primary_meal") or "").lower()
         if meal_ctx.meal_window == primary_meal:
             meal_score = 0.42
-        elif meal_ctx.meal_window in meal_types:
-            meal_score = 0.15
-        elif meal_ctx.meal_window == "flexible":
+        elif meal_ctx.meal_window in meal_types or meal_ctx.meal_window == "flexible":
             meal_score = 0.15
         else:
             meal_score = -0.30
@@ -634,16 +654,22 @@ def score_and_select_contextual_recipes(
             reasons.append("all essential ingredients in pantry")
         elif rec_type == "COOK_WITH_SUBSTITUTIONS":
             missing_cnt = len(essential_ings) - len(avail_essential)
-            reasons.append(f"only {missing_cnt} ingredient{'s' if missing_cnt != 1 else ''} missing or partial")
+            reasons.append(
+                f"only {missing_cnt} ingredient{'s' if missing_cnt != 1 else ''} missing or partial"
+            )
         if any(r.get("expiring_soon") for r in matched_essential):
             reasons.append("uses items expiring soon")
 
         out_rec = dict(rec)
         out_rec["meal_type"] = (
-            meal_ctx.meal_window if meal_ctx.meal_window in meal_types else (meal_types[0] if meal_types else None)
+            meal_ctx.meal_window
+            if meal_ctx.meal_window in meal_types
+            else (meal_types[0] if meal_types else None)
         )
         out_rec["recommendation_type"] = rec_type
-        out_rec["why_recommended"] = " · ".join(reasons).capitalize() if reasons else "Matches your pantry"
+        out_rec["why_recommended"] = (
+            " · ".join(reasons).capitalize() if reasons else "Matches your pantry"
+        )
         out_rec["_score"] = total_score
         scored.append((total_score, out_rec))
 

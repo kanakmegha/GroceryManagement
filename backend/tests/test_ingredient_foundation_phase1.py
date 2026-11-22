@@ -214,10 +214,14 @@ async def test_mapping_duplicate_prevention_household_isolation_and_fk_integrity
 
         # Household isolation query
         hh1_rows = (
-            await session.execute(
-                select(IngredientMapping).where(IngredientMapping.household_id == hh1_id)
+            (
+                await session.execute(
+                    select(IngredientMapping).where(IngredientMapping.household_id == hh1_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(hh1_rows) == 1
         assert hh1_rows[0].canonical_ingredient_id == milk_id
 
@@ -260,12 +264,14 @@ async def test_mapping_duplicate_prevention_household_isolation_and_fk_integrity
         await session.delete(aavin_ref)
         await session.commit()
         remaining_aavin = (
-            await session.execute(
-                select(IngredientMapping).where(
-                    IngredientMapping.canonical_item_id == aavin_id
+            (
+                await session.execute(
+                    select(IngredientMapping).where(IngredientMapping.canonical_item_id == aavin_id)
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert remaining_aavin == []
 
     await engine.dispose()
@@ -412,7 +418,16 @@ async def test_migration_preserves_existing_data_and_seeds_taxonomy(tmp_path: Pa
         # Initial seed covers all 8 required categories
         seeded = (await session.execute(select(CanonicalIngredient))).scalars().all()
         seeded_categories = {row.category for row in seeded}
-        assert {"dairy", "grain", "pulse", "vegetable", "fruit", "oil", "spice", "nut"} <= seeded_categories
+        assert {
+            "dairy",
+            "grain",
+            "pulse",
+            "vegetable",
+            "fruit",
+            "oil",
+            "spice",
+            "nut",
+        } <= seeded_categories
 
         # Idempotent JSON seed supports future additions without code changes
         custom_seed = tmp_path / "custom_seed.json"
@@ -505,7 +520,7 @@ async def test_existing_purchase_inventory_and_price_history_after_migration(
     items = inv_resp.json()["items"]
     assert len(items) == 1
     assert Decimal(items[0]["total_remaining_qty"]) == Decimal("1000.000")
-    canonical_item_id = items[0]["canonical_item_id"]
+    assert items[0]["canonical_item_id"]
 
     # Verify price history & insights summary work unchanged
     insights_resp = await client.get("/api/v1/insights/summary", headers=headers)

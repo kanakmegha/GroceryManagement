@@ -1,4 +1,5 @@
 """Experimental OCR API Router (/api/experimental/receipts/*)."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -9,9 +10,9 @@ from app.core.config import Settings, get_settings
 from app.core.errors import AppError
 from app.core.tenancy import HouseholdContext, get_household_context
 from app.modules.experimental_ocr.schemas import (
-    ExtractModeType,
     ExperimentalHealthOut,
     ExperimentalJobOut,
+    ExtractModeType,
 )
 from app.modules.experimental_ocr.service import (
     attach_ground_truth,
@@ -38,9 +39,13 @@ async def experimental_extract(
 ) -> ExperimentalJobOut:
     data = await file.read()
     if not data:
-        raise AppError(status_code=422, code="EMPTY_FILE", message="Uploaded receipt file is empty.")
+        raise AppError(
+            status_code=422, code="EMPTY_FILE", message="Uploaded receipt file is empty."
+        )
     if len(data) > 10 * 1024 * 1024:
-        raise AppError(status_code=422, code="FILE_TOO_LARGE", message="Receipt file exceeds 10 MB limit.")
+        raise AppError(
+            status_code=422, code="FILE_TOO_LARGE", message="Receipt file exceeds 10 MB limit."
+        )
 
     settings: Settings = getattr(request.app.state, "settings", None) or get_settings()
     return await run_experimental_extract(

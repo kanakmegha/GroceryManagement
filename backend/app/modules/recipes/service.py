@@ -8,7 +8,12 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
-from app.modules.inventory.models import CanonicalIngredient, CanonicalItem, IngredientMapping, InventoryLot
+from app.modules.inventory.models import (
+    CanonicalIngredient,
+    CanonicalItem,
+    IngredientMapping,
+    InventoryLot,
+)
 from app.modules.recipes.models import HouseholdRecipePreference, RecipeFeedback
 from app.modules.recipes.schemas import (
     HouseholdRecipePreferencesIn,
@@ -89,7 +94,10 @@ async def _load_active_inventory_payload(
     all_maps = (
         await db.execute(
             select(IngredientMapping, CanonicalIngredient)
-            .join(CanonicalIngredient, CanonicalIngredient.id == IngredientMapping.canonical_ingredient_id)
+            .join(
+                CanonicalIngredient,
+                CanonicalIngredient.id == IngredientMapping.canonical_ingredient_id,
+            )
             .where(
                 IngredientMapping.household_id == household_id,
                 CanonicalIngredient.is_active.is_(True),
@@ -114,7 +122,9 @@ async def _load_active_inventory_payload(
 
         c_ing = confirmed_ing_by_item.get(item.id)
         if c_ing is not None:
-            conv_qty, _ = convert_to_target_unit(lot.remaining_qty, lot.base_unit, c_ing.standard_unit)
+            conv_qty, _ = convert_to_target_unit(
+                lot.remaining_qty, lot.base_unit, c_ing.standard_unit
+            )
             add_qty = float(conv_qty) if conv_qty is not None else float(lot.remaining_qty)
             add_unit = c_ing.standard_unit if conv_qty is not None else lot.base_unit
             entry = aggregated_ing.get(c_ing.id)
@@ -268,8 +278,7 @@ async def _invoke_provider(
             return list(res["items"]), meta
         if isinstance(res, list):
             return [
-                item.model_dump() if hasattr(item, "model_dump") else dict(item)
-                for item in res
+                item.model_dump() if hasattr(item, "model_dump") else dict(item) for item in res
             ], meta
     return [], meta
 
@@ -303,7 +312,11 @@ async def _invoke_discover_references(
     for ref in res[:limit]:
         if isinstance(ref, dict):
             url_str = str(ref.get("url") or "")
-            l_type = "video" if ("youtube.com" in url_str.lower() or "youtu.be" in url_str.lower()) else "written_recipe"
+            l_type = (
+                "video"
+                if ("youtube.com" in url_str.lower() or "youtu.be" in url_str.lower())
+                else "written_recipe"
+            )
             out.append(
                 RecipeReferenceOut(
                     title=str(ref.get("title") or query),
@@ -315,7 +328,11 @@ async def _invoke_discover_references(
             )
         else:
             url_str = str(getattr(ref, "url", ""))
-            l_type = "video" if ("youtube.com" in url_str.lower() or "youtu.be" in url_str.lower()) else "written_recipe"
+            l_type = (
+                "video"
+                if ("youtube.com" in url_str.lower() or "youtu.be" in url_str.lower())
+                else "written_recipe"
+            )
             out.append(
                 RecipeReferenceOut(
                     title=str(getattr(ref, "title", query)),
@@ -402,16 +419,18 @@ async def record_recipe_feedback(
     )
 
 
-async def list_recipe_feedback(
-    db: AsyncSession, household_id: UUID
-) -> list[RecipeFeedbackOut]:
+async def list_recipe_feedback(db: AsyncSession, household_id: UUID) -> list[RecipeFeedbackOut]:
     rows = (
-        await db.execute(
-            select(RecipeFeedback)
-            .where(RecipeFeedback.household_id == household_id)
-            .order_by(RecipeFeedback.created_at.desc())
+        (
+            await db.execute(
+                select(RecipeFeedback)
+                .where(RecipeFeedback.household_id == household_id)
+                .order_by(RecipeFeedback.created_at.desc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [
         RecipeFeedbackOut(
             id=r.id,
@@ -506,17 +525,23 @@ async def get_recipe_recommendations(
     preference_profile = await compute_household_preference_profile(db, household_id)
     recent_recipes = await _load_recent_cooking_history(db, household_id)
     fb_rows = (
-        await db.execute(
-            select(RecipeFeedback)
-            .where(RecipeFeedback.household_id == household_id)
-            .order_by(RecipeFeedback.created_at.asc())
+        (
+            await db.execute(
+                select(RecipeFeedback)
+                .where(RecipeFeedback.household_id == household_id)
+                .order_by(RecipeFeedback.created_at.asc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     feedback_map: dict[str, str] = {r.recipe_id: r.action for r in fb_rows}
 
     inv_fp, hist_fp = _compute_rec_fingerprints(inventory_payload, preference_profile)
     pref_fp = hashlib.sha256(
-        json.dumps({"prefs": explicit_prefs, "fb": feedback_map}, sort_keys=True, default=str).encode()
+        json.dumps(
+            {"prefs": explicit_prefs, "fb": feedback_map}, sort_keys=True, default=str
+        ).encode()
     ).hexdigest()[:12]
     cache_key = (
         str(household_id),
@@ -629,7 +654,9 @@ async def get_recipe_recommendations(
 
         total_req = len(ingredients_out)
         substitutions_list = [str(s) for s in (rec.get("substitutions") or [])]
-        rec_type = classify_recommendation_type(reconciled_list, substitutions_list, matching_inventory)
+        rec_type = classify_recommendation_type(
+            reconciled_list, substitutions_list, matching_inventory
+        )
         refs = (
             await _invoke_discover_references(
                 title,
@@ -639,7 +666,9 @@ async def get_recipe_recommendations(
             if include_references
             else []
         )
-        steps_list = [str(s) for s in (rec.get("steps") or rec.get("instructions") or []) if str(s).strip()]
+        steps_list = [
+            str(s) for s in (rec.get("steps") or rec.get("instructions") or []) if str(s).strip()
+        ]
         if not steps_list:
             steps_list = [
                 f"Prepare and measure the ingredients for {title}.",
@@ -667,8 +696,7 @@ async def get_recipe_recommendations(
             {
                 **rec,
                 "ingredients": [
-                    {"name": i.name, "is_optional": i.is_optional}
-                    for i in ingredients_out
+                    {"name": i.name, "is_optional": i.is_optional} for i in ingredients_out
                 ],
                 "steps": steps_list,
                 "structured_steps": raw_structured,
@@ -683,13 +711,11 @@ async def get_recipe_recommendations(
         )
         avail_names = [i.name for i in ingredients_out if i.status != "missing"][:3]
         why_rec = rec.get("why_recommended") or (
-            (
-                f"Uses expiring pantry items ({', '.join(avail_names)})"
-                if verified_expiring and avail_names
-                else f"Uses {', '.join(avail_names)} from your pantry"
-                if avail_names
-                else "Suggested based on your household profile"
-            )
+            f"Uses expiring pantry items ({', '.join(avail_names)})"
+            if verified_expiring and avail_names
+            else f"Uses {', '.join(avail_names)} from your pantry"
+            if avail_names
+            else "Suggested based on your household profile"
         )
         items_out.append(
             RecipeRecommendationOut(
@@ -872,7 +898,9 @@ async def chat_recipes(
                 missing_ings.append(ing_out)
 
         substitutions_list = [str(s) for s in (rec.get("substitutions") or [])]
-        rec_type = classify_recommendation_type(reconciled_list, substitutions_list, inventory_payload)
+        rec_type = classify_recommendation_type(
+            reconciled_list, substitutions_list, inventory_payload
+        )
 
         refs = await _invoke_discover_references(
             title,
@@ -892,7 +920,9 @@ async def chat_recipes(
         ]
         all_links.extend(links)
 
-        steps_list = [str(s) for s in (rec.get("steps") or rec.get("instructions") or []) if str(s).strip()]
+        steps_list = [
+            str(s) for s in (rec.get("steps") or rec.get("instructions") or []) if str(s).strip()
+        ]
         if not steps_list:
             steps_list = [
                 f"Prepare and measure the ingredients for {title}.",
@@ -927,7 +957,7 @@ async def chat_recipes(
                 "structured_steps": raw_structured,
             }
         )
-        has_verified_ref = any(l.verified and l.url for l in links)
+        has_verified_ref = any(lnk.verified and lnk.url for lnk in links)
         src_type = "external_reference" if has_verified_ref else "ai_generated"
         src_label = (
             f"Externally referenced: {links[0].source or links[0].title}"

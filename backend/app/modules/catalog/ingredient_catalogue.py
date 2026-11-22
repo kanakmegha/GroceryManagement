@@ -6,12 +6,12 @@ Single source of truth backed by:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from functools import lru_cache
 import json
-from pathlib import Path
 import re
 import unicodedata
+from dataclasses import dataclass, field
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 CATALOGUE_JSON_PATH = (
@@ -190,7 +190,9 @@ def validate_catalogue_dict(raw: dict[str, Any]) -> CatalogueValidationResult:
 
         fmeas = fam.get("measurement") or {}
         if fmeas.get("default_dimension") not in supported_dims:
-            errors.append(f"Family {fid} has unsupported dimension {fmeas.get('default_dimension')!r}")
+            errors.append(
+                f"Family {fid} has unsupported dimension {fmeas.get('default_dimension')!r}"
+            )
         for u in fmeas.get("supported_units") or []:
             if u not in supported_units:
                 errors.append(f"Family {fid} has unsupported unit {u!r}")
@@ -215,7 +217,9 @@ def validate_catalogue_dict(raw: dict[str, Any]) -> CatalogueValidationResult:
             if var.get("is_unspecified_variant"):
                 unspec_cnt += 1
                 if var.get("variant_status") != "unspecified":
-                    errors.append(f"Unspecified variant {vid} has status {var.get('variant_status')!r}")
+                    errors.append(
+                        f"Unspecified variant {vid} has status {var.get('variant_status')!r}"
+                    )
             if "learning" not in var or "learned_aliases" not in (var.get("learning") or {}):
                 errors.append(f"Variant {vid} missing learning.learned_aliases")
             for a in var.get("aliases") or []:

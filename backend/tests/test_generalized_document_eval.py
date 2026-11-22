@@ -1,10 +1,12 @@
 """Generalized document-layout evaluation & held-out layout tests.
 
 Covers:
-1. Real PyMuPDF digital multi-page PDF with bordered tables, wrapped descriptions, and HSN tax summary.
+1. Real PyMuPDF digital multi-page PDF with bordered tables, wrapped descriptions,
+   and HSN tax summary.
 2. Bordered PNG image with wide descriptions + OpenCV vertical grid-line boundary inference.
 3. Linux-compatible TesseractOcrProvider TSV parsing without Apple Vision.
-4. Held-out unseen column orders, abbreviated headers, headerless page-2 continuation, and consistency checks.
+4. Held-out unseen column orders, abbreviated headers, headerless page-2 continuation,
+   and consistency checks.
 5. Privacy redaction for names, UTR/transaction IDs, addresses, phones, and emails.
 """
 
@@ -27,13 +29,17 @@ from app.infra.ocr.spatial_parser import parse_receipt_text_and_boxes
 from app.infra.ocr.validation import validate_extracted_receipt
 
 
-def _box(text: str, x: float, y: float, w: float = 0.08, h: float = 0.018, page: int = 1) -> OcrTokenBox:
+def _box(
+    text: str, x: float, y: float, w: float = 0.08, h: float = 0.018, page: int = 1
+) -> OcrTokenBox:
     return OcrTokenBox(text=text, x=x, y=y, w=w, h=h, page=page, confidence=0.95)
 
 
 @pytest.mark.asyncio
 async def test_real_multipage_digital_pdf_with_hsn_summary_table() -> None:
-    """End-to-end PyMuPDF digital PDF: 2 pages, repeated headers, and a separate HSN tax summary table."""
+    """End-to-end PyMuPDF digital PDF: 2 pages, repeated headers, and a separate HSN tax summary
+    table.
+    """
     doc = fitz.open()
     page1 = doc.new_page(width=595, height=842)
     page1.insert_text((40, 45), "UNSEEN WHOLESALE MART", fontsize=14)
@@ -113,7 +119,8 @@ def test_bordered_image_vertical_grid_detection_protects_wide_descriptions() -> 
     # x=450 / 800 = 0.5625 should be detected
     assert any(abs(gx - 0.5625) <= 0.02 for gx in grid_xs)
 
-    # Description token extends to x=0.53 (past midpoint between header x=0.10 and Qty x=0.62 -> 0.36!)
+    # Description token extends to x=0.53 (past midpoint between header x=0.10 and Qty x=0.62 ->
+    # 0.36!)
     boxes = [
         _box("Item", 0.06, 0.14, w=0.08),
         _box("Qty", 0.60, 0.14, w=0.05),
@@ -142,7 +149,9 @@ def test_bordered_image_vertical_grid_detection_protects_wide_descriptions() -> 
 def test_linux_tesseract_provider_tsv_preserves_reading_order_and_lines(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """TesseractOcrProvider executes without Apple Vision and preserves reading_order and visual rows."""
+    """TesseractOcrProvider executes without Apple Vision and preserves reading_order and visual
+    rows.
+    """
     tsv_output = (
         "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
         "5\t1\t1\t1\t1\t1\t40\t20\t120\t20\t95\tMETRO\n"
@@ -152,7 +161,9 @@ def test_linux_tesseract_provider_tsv_preserves_reading_order_and_lines(
     )
     mock_proc = MagicMock(returncode=0, stdout=tsv_output)
     monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: mock_proc)
-    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/tesseract" if name == "tesseract" else None)
+    monkeypatch.setattr(
+        "shutil.which", lambda name: "/usr/bin/tesseract" if name == "tesseract" else None
+    )
 
     img = np.full((200, 700, 3), 255, dtype=np.uint8)
     _, enc = cv2.imencode(".png", img)
@@ -166,7 +177,9 @@ def test_linux_tesseract_provider_tsv_preserves_reading_order_and_lines(
 
 
 def test_held_out_unseen_column_order_abbreviations_and_consistency_checks() -> None:
-    """Held-out layout: reversed/abbreviated columns, discontinuous serials, and tax-total anomaly."""
+    """Held-out layout: reversed/abbreviated columns, discontinuous serials, and tax-total
+    anomaly.
+    """
     boxes = [
         _box("Sl.", 0.04, 0.10, w=0.04),
         _box("Net Val", 0.14, 0.10, w=0.08),
@@ -212,7 +225,9 @@ def test_held_out_unseen_column_order_abbreviations_and_consistency_checks() -> 
 
 
 def test_privacy_redacts_names_utr_addresses_without_touching_prices() -> None:
-    """Personal names, UTR/UPI refs, emails, phones, and addresses are redacted without touching prices."""
+    """Personal names, UTR/UPI refs, emails, phones, and addresses are redacted without touching
+    prices.
+    """
     raw = (
         "Fresh Mart\n"
         "Name: Aarav Sharma\n"

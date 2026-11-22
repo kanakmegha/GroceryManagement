@@ -230,13 +230,17 @@ async def get_ingredient_inventory_summary(
 
     # 1. Load all active CanonicalItems visible to this household (or soft-merged pointers)
     all_items = (
-        await db.execute(
-            select(CanonicalItem).where(
-                (CanonicalItem.household_id == household_id)
-                | (CanonicalItem.household_id.is_(None))
+        (
+            await db.execute(
+                select(CanonicalItem).where(
+                    (CanonicalItem.household_id == household_id)
+                    | (CanonicalItem.household_id.is_(None))
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     items_by_id: dict[UUID, CanonicalItem] = {it.id: it for it in all_items}
 
     def _resolve_survivor(item_id: UUID) -> CanonicalItem | None:
@@ -251,15 +255,20 @@ async def get_ingredient_inventory_summary(
             return None
         return cur
 
-    # 2. Load IngredientMappings for this household (household overrides global; deduplicated per canonical_item_id)
+    # 2. Load IngredientMappings for this household (household overrides global; deduplicated per
+    # canonical_item_id)
     mapping_rows = (
-        await db.execute(
-            select(IngredientMapping).where(
-                (IngredientMapping.household_id == household_id)
-                | (IngredientMapping.household_id.is_(None))
+        (
+            await db.execute(
+                select(IngredientMapping).where(
+                    (IngredientMapping.household_id == household_id)
+                    | (IngredientMapping.household_id.is_(None))
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     effective_mapping_by_item: dict[UUID, IngredientMapping] = {}
     for m in mapping_rows:
@@ -272,12 +281,16 @@ async def get_ingredient_inventory_summary(
             effective_mapping_by_item[target_item_id] = m
         else:
             # Prefer household-scoped mapping over global; prefer user_confirmed over unconfirmed
-            existing_score = (1 if existing.household_id == household_id else 0, 1 if existing.user_confirmed else 0)
+            existing_score = (
+                1 if existing.household_id == household_id else 0,
+                1 if existing.user_confirmed else 0,
+            )
             new_score = (1 if m.household_id == household_id else 0, 1 if m.user_confirmed else 0)
             if new_score > existing_score:
                 effective_mapping_by_item[target_item_id] = m
 
-    # 3. Load active lots with remaining_qty > 0 for this household (same filter as get_inventory_summary)
+    # 3. Load active lots with remaining_qty > 0 for this household (same filter as
+    # get_inventory_summary)
     lot_rows = (
         await db.execute(
             select(InventoryLot, CanonicalItem)
@@ -304,14 +317,20 @@ async def get_ingredient_inventory_summary(
 
     # 4. Load active CanonicalIngredients
     ingredients = (
-        await db.execute(
-            select(CanonicalIngredient).where(CanonicalIngredient.is_active.is_(True))
+        (
+            await db.execute(
+                select(CanonicalIngredient).where(CanonicalIngredient.is_active.is_(True))
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     ingredients_by_id: dict[UUID, CanonicalIngredient] = {ing.id: ing for ing in ingredients}
 
     # Map confirmed mappings per ingredient
-    confirmed_items_by_ing: dict[UUID, list[tuple[CanonicalItem, IngredientMapping]]] = defaultdict(list)
+    confirmed_items_by_ing: dict[UUID, list[tuple[CanonicalItem, IngredientMapping]]] = defaultdict(
+        list
+    )
     for item_id, mapping in effective_mapping_by_item.items():
         if not mapping.user_confirmed:
             continue
@@ -346,7 +365,10 @@ async def get_ingredient_inventory_summary(
             prod_earliest_exp: date | None = None
             lot_details: list[IngredientLotDetailOut] = []
 
-            for lot in sorted(item_lots, key=lambda l: (l.expires_on or date.max, l.purchased_at)):
+            for lot in sorted(
+                item_lots,
+                key=lambda lot_item: (lot_item.expires_on or date.max, lot_item.purchased_at),
+            ):
                 is_expired = lot.expires_on is not None and lot.expires_on < ref_today
                 if is_expired:
                     prod_has_expired = True
@@ -369,8 +391,12 @@ async def get_ingredient_inventory_summary(
                     all_compatible = False
                     # Keep raw unit group total in group_unit (base family or raw unknown unit)
                     if group_unit in ("g", "ml"):
-                        conv_group, _ = convert_to_target_unit(lot.remaining_qty, lot.base_unit, group_unit)
-                        unit_group_totals[group_unit] += conv_group if conv_group is not None else lot.remaining_qty
+                        conv_group, _ = convert_to_target_unit(
+                            lot.remaining_qty, lot.base_unit, group_unit
+                        )
+                        unit_group_totals[group_unit] += (
+                            conv_group if conv_group is not None else lot.remaining_qty
+                        )
                     else:
                         unit_group_totals[group_unit] += lot.remaining_qty
                     unit_group_counts[group_unit] += 1
@@ -430,15 +456,25 @@ async def get_ingredient_inventory_summary(
             completeness = "empty"
             total_qty: Decimal | None = Decimal("0.000")
             note = "No active non-expired lots for mapped products."
-        elif all_compatible and len(unit_groups) == 1 and unit_groups[0].unit == normalize_pantry_unit(ing.standard_unit):
+        elif (
+            all_compatible
+            and len(unit_groups) == 1
+            and unit_groups[0].unit == normalize_pantry_unit(ing.standard_unit)
+        ):
             completeness = "complete"
             total_qty = unit_groups[0].total_qty
-            note = f"Summed {total_lot_count} active lot(s) across {len(product_breakdowns)} product(s) in {ing.standard_unit}."
+            note = (
+                f"Summed {total_lot_count} active lot(s) across {len(product_breakdowns)} "
+                f"product(s) in {ing.standard_unit}."
+            )
         else:
             completeness = "incomplete"
             total_qty = None
             group_desc = ", ".join(f"{g.total_qty} {g.unit}" for g in unit_groups)
-            note = f"Incomplete combined total due to incompatible units ({group_desc}); standard unit is {ing.standard_unit}."
+            note = (
+                f"Incomplete combined total due to incompatible units ({group_desc}); "
+                f"standard unit is {ing.standard_unit}."
+            )
 
         ingredient_outs.append(
             IngredientSummaryOut(
@@ -474,7 +510,9 @@ async def get_ingredient_inventory_summary(
             continue
 
         non_expired_lots = [
-            l for l in item_lots if not (l.expires_on is not None and l.expires_on < ref_today)
+            lot
+            for lot in item_lots
+            if not (lot.expires_on is not None and lot.expires_on < ref_today)
         ]
         if not non_expired_lots:
             continue
@@ -494,15 +532,16 @@ async def get_ingredient_inventory_summary(
                 name=item.name,
                 category=item.category,
                 base_unit=item.default_base_unit,
-                total_remaining_qty=sum((l.remaining_qty for l in non_expired_lots), Decimal("0")).quantize(
-                    Decimal("0.001")
-                ),
+                total_remaining_qty=sum(
+                    (lot.remaining_qty for lot in non_expired_lots), Decimal("0")
+                ).quantize(Decimal("0.001")),
                 active_lot_count=len(non_expired_lots),
                 suggestion_status="unconfirmed_suggestion" if is_suggested else "unmapped",
                 suggested_ingredient_id=sugg_ing.id if sugg_ing else None,
                 suggested_ingredient_name=sugg_ing.name if sugg_ing else None,
                 suggestion_reason=(
-                    f"Suggested from {mapping.mapping_source} (confidence {mapping.matching_confidence}); awaiting user confirmation."
+                    f"Suggested from {mapping.mapping_source} (confidence "
+                    f"{mapping.matching_confidence}); awaiting user confirmation."
                     if is_suggested and mapping is not None
                     else None
                 ),
@@ -510,7 +549,16 @@ async def get_ingredient_inventory_summary(
         )
 
     unmapped_outs.sort(key=lambda x: x.name.lower())
-    _non_food_cats = {"non_food", "non-food", "personal_care", "household", "cleaning", "pet", "toiletry", "stationery"}
+    _non_food_cats = {
+        "non_food",
+        "non-food",
+        "personal_care",
+        "household",
+        "cleaning",
+        "pet",
+        "toiletry",
+        "stationery",
+    }
     mapping_review_items = [
         u
         for u in unmapped_outs

@@ -5,12 +5,42 @@ from typing import Literal
 BaseUnit = Literal["g", "ml", "pcs"]
 
 _COUNT_UNITS = {
-    "pcs", "pc", "piece", "pieces", "nos", "no", "unit", "units",
-    "pack", "packs", "pkt", "pkts", "packet", "packets",
-    "bunch", "bunches", "ea", "each", "bottle", "bottles",
-    "can", "cans", "jar", "jars", "bag", "bags",
-    "box", "boxes", "tin", "tins", "carton", "cartons", "pouch", "pouches",
-    "dozen", "doz",
+    "pcs",
+    "pc",
+    "piece",
+    "pieces",
+    "nos",
+    "no",
+    "unit",
+    "units",
+    "pack",
+    "packs",
+    "pkt",
+    "pkts",
+    "packet",
+    "packets",
+    "bunch",
+    "bunches",
+    "ea",
+    "each",
+    "bottle",
+    "bottles",
+    "can",
+    "cans",
+    "jar",
+    "jars",
+    "bag",
+    "bags",
+    "box",
+    "boxes",
+    "tin",
+    "tins",
+    "carton",
+    "cartons",
+    "pouch",
+    "pouches",
+    "dozen",
+    "doz",
 }
 
 _PACK_METRIC_RE = re.compile(
@@ -107,7 +137,8 @@ def resolve_purchase_measurement(
     unit: str,
     pack_size: str | None = None,
 ) -> tuple[Decimal, BaseUnit]:
-    """Normalize purchase quantity & unit, multiplying count/pack units by explicit metric pack_size when available.
+    """Normalize purchase quantity & unit, multiplying count/pack units by explicit metric pack_size
+    when available.
 
     Never invents a weight/volume conversion when pack_size is missing or non-metric.
     """

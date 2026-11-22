@@ -1,6 +1,5 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from uuid import uuid4
 
 import httpx
 from sqlalchemy import select
@@ -8,9 +7,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.modules.auth.models import Household, User
 from app.modules.catalog.ingredient_mapping_service import (
-    backfill_canonical_item_mappings,
     confirm_ingredient_mapping,
-    resolve_or_suggest_mapping,
 )
 from app.modules.inventory.models import (
     CanonicalIngredient,
@@ -199,9 +196,18 @@ async def test_reconciliation_classifications_and_duplicate_recovery_prevention(
         db.add(pi_draft)
         await db.commit()
 
-        assert _reconcile_purchase_item("confirmed", pi_ok, lot_ok, [led_ok]) == "CONFIRMED_AND_INVENTORIED"
-        assert _reconcile_purchase_item("confirmed", pi_miss, None, []) == "CONFIRMED_BUT_MISSING_INVENTORY"
-        assert _reconcile_purchase_item("confirmed", pi_part, lot_part, []) == "CONFIRMED_BUT_PARTIALLY_INVENTORIED"
+        assert (
+            _reconcile_purchase_item("confirmed", pi_ok, lot_ok, [led_ok])
+            == "CONFIRMED_AND_INVENTORIED"
+        )
+        assert (
+            _reconcile_purchase_item("confirmed", pi_miss, None, [])
+            == "CONFIRMED_BUT_MISSING_INVENTORY"
+        )
+        assert (
+            _reconcile_purchase_item("confirmed", pi_part, lot_part, [])
+            == "CONFIRMED_BUT_PARTIALLY_INVENTORIED"
+        )
         assert _reconcile_purchase_item("draft", pi_draft, None, []) == "UNCONFIRMED_DRAFT"
 
         # 5. Duplicate recovery prevention via unique purchase_item_id on InventoryLot
@@ -289,7 +295,9 @@ async def test_pantry_visibility_mapping_isolation_and_no_inventory_mutation(
         await confirm_ingredient_mapping(
             db,
             household_id=hh_a_id,
-            canonical_item_id=unmapped_ci_id if isinstance(unmapped_ci_id, type(milk.id)) else __import__("uuid").UUID(unmapped_ci_id),
+            canonical_item_id=unmapped_ci_id
+            if isinstance(unmapped_ci_id, type(milk.id))
+            else __import__("uuid").UUID(unmapped_ci_id),
             canonical_ingredient_id=milk.id,
         )
         await db.commit()

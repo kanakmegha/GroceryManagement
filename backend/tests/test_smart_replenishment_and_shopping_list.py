@@ -34,7 +34,9 @@ async def test_replenishment_patterns_fefo_depletion_units_exclusions_and_isolat
     me_b = await client.get("/api/v1/auth/me", headers=hdr_b)
     hdr_b["X-Household-Id"] = me_b.json()["active_household"]["id"]
 
-    async def confirm_grocery_item(purchased_on: str, name: str, qty: float, unit: str, cat: str = "dairy") -> str:
+    async def confirm_grocery_item(
+        purchased_on: str, name: str, qty: float, unit: str, cat: str = "dairy"
+    ) -> str:
         res = await client.post(
             "/api/v1/purchases",
             headers=hdr_a,
@@ -64,23 +66,36 @@ async def test_replenishment_patterns_fefo_depletion_units_exclusions_and_isolat
         return lots[0]["canonical_item_id"] if lots else ""
 
     today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
-    # 1. Repeated purchases of Milk (every 4 days: 5 purchases) -> high confidence, then deplete via COOK_OUT + WASTE_OUT
-    milk_cid = await confirm_grocery_item((today - timedelta(days=16)).isoformat(), "Toned Milk", 1000, "ml")
+    # 1. Repeated purchases of Milk (every 4 days: 5 purchases) -> high confidence, then deplete
+    # via COOK_OUT + WASTE_OUT
+    milk_cid = await confirm_grocery_item(
+        (today - timedelta(days=16)).isoformat(), "Toned Milk", 1000, "ml"
+    )
     await confirm_grocery_item((today - timedelta(days=12)).isoformat(), "Toned Milk", 1000, "ml")
     await confirm_grocery_item((today - timedelta(days=8)).isoformat(), "Toned Milk", 1000, "ml")
     await confirm_grocery_item((today - timedelta(days=4)).isoformat(), "Toned Milk", 1000, "ml")
     await confirm_grocery_item(today.isoformat(), "Toned Milk", 1000, "ml")
 
     # 2. Single-purchase cold start: Olive Oil
-    oil_cid = await confirm_grocery_item((today - timedelta(days=5)).isoformat(), "Olive Oil", 1, "l", cat="pantry")
+    oil_cid = await confirm_grocery_item(
+        (today - timedelta(days=5)).isoformat(), "Olive Oil", 1, "l", cat="pantry"
+    )
 
     # 3. Irregular purchases of Tomatoes (3 days, 11 days) -> low confidence
-    tom_cid = await confirm_grocery_item((today - timedelta(days=15)).isoformat(), "Fresh Tomatoes", 500, "g", cat="produce")
-    await confirm_grocery_item((today - timedelta(days=12)).isoformat(), "Fresh Tomatoes", 500, "g", cat="produce")
-    await confirm_grocery_item((today - timedelta(days=1)).isoformat(), "Fresh Tomatoes", 500, "g", cat="produce")
+    tom_cid = await confirm_grocery_item(
+        (today - timedelta(days=15)).isoformat(), "Fresh Tomatoes", 500, "g", cat="produce"
+    )
+    await confirm_grocery_item(
+        (today - timedelta(days=12)).isoformat(), "Fresh Tomatoes", 500, "g", cat="produce"
+    )
+    await confirm_grocery_item(
+        (today - timedelta(days=1)).isoformat(), "Fresh Tomatoes", 500, "g", cat="produce"
+    )
 
     # 4. Non-food item (Hair Oil) + Restaurant receipt -> both must be excluded
-    await confirm_grocery_item(today.isoformat(), "Dabur Almond Hair Oil", 1, "pcs", cat="personal_care")
+    await confirm_grocery_item(
+        today.isoformat(), "Dabur Almond Hair Oil", 1, "pcs", cat="personal_care"
+    )
     rest_res = await client.post(
         "/api/v1/purchases",
         headers=hdr_a,
@@ -103,14 +118,23 @@ async def test_replenishment_patterns_fefo_depletion_units_exclusions_and_isolat
         },
     )
     assert rest_res.status_code == 201
-    assert (await client.post(f"/api/v1/purchases/{rest_res.json()['id']}/confirm", headers=hdr_a)).status_code == 200
+    assert (
+        await client.post(f"/api/v1/purchases/{rest_res.json()['id']}/confirm", headers=hdr_a)
+    ).status_code == 200
 
-    # Manipulate lots & ledger deterministically for Milk (all depleted), Tomatoes (1 expired lot + 1 active partial lot + COOK_OUT/WASTE_OUT), and Incompatible unit item
+    # Manipulate lots & ledger deterministically for Milk (all depleted), Tomatoes (1 expired lot
+    # + 1 active partial lot + COOK_OUT/WASTE_OUT), and Incompatible unit item
     async with client._transport.app.state.session_maker() as db:  # type: ignore[attr-defined]
         # Deplete all Milk lots and record COOK_OUT + WASTE_OUT
         milk_lots = (
-            await db.execute(select(InventoryLot).where(InventoryLot.canonical_item_id == UUID(milk_cid)))
-        ).scalars().all()
+            (
+                await db.execute(
+                    select(InventoryLot).where(InventoryLot.canonical_item_id == UUID(milk_cid))
+                )
+            )
+            .scalars()
+            .all()
+        )
         for lot in milk_lots:
             lot.remaining_qty = Decimal("0")
             lot.lot_status = "depleted"
@@ -143,14 +167,19 @@ async def test_replenishment_patterns_fefo_depletion_units_exclusions_and_isolat
             )
         )
 
-        # Tomatoes: expire first 2 lots, keep 3rd lot with 200g remaining & consumption 100g/day -> 2 days remaining -> buy_now
+        # Tomatoes: expire first 2 lots, keep 3rd lot with 200g remaining & consumption 100g/day
+        # -> 2 days remaining -> buy_now
         tom_lots = (
-            await db.execute(
-                select(InventoryLot)
-                .where(InventoryLot.canonical_item_id == UUID(tom_cid))
-                .order_by(InventoryLot.purchased_at.asc())
+            (
+                await db.execute(
+                    select(InventoryLot)
+                    .where(InventoryLot.canonical_item_id == UUID(tom_cid))
+                    .order_by(InventoryLot.purchased_at.asc())
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         tom_lots[0].expires_on = today - timedelta(days=2)  # expired -> excluded from usable stock
         tom_lots[1].remaining_qty = Decimal("0")
         tom_lots[1].lot_status = "depleted"
@@ -207,7 +236,8 @@ async def test_replenishment_patterns_fefo_depletion_units_exclusions_and_isolat
     assert milk_rec["confidence"] == "high"
     assert milk_rec["purchase_count"] == 5
 
-    # Tomatoes: low confidence -> suppressed from actionable buy_now into needs_more_data, while metrics remain computed
+    # Tomatoes: low confidence -> suppressed from actionable buy_now into needs_more_data, while
+    # metrics remain computed
     needs_more_by_id = {x["canonical_item_id"]: x for x in data.get("needs_more_data", [])}
     tom_rec = needs_more_by_id[tom_cid]
     assert tom_cid not in buy_now_by_id
@@ -216,16 +246,20 @@ async def test_replenishment_patterns_fefo_depletion_units_exclusions_and_isolat
     assert tom_rec["estimated_days_remaining"] == 2.0
     assert tom_rec["confidence"] == "low"  # irregular 3 vs 11 day intervals
 
-    # Olive Oil: single purchase -> insufficient_data -> suppressed from actionable lists into needs_more_data
+    # Olive Oil: single purchase -> insufficient_data -> suppressed from actionable lists into
+    # needs_more_data
     oil_rec = needs_more_by_id[oil_cid]
     assert oil_rec["confidence"] == "insufficient_data"
     assert oil_rec["stock_status"] == "adequate"
     assert oil_rec["recommended_qty"] is None
     assert oil_cid not in regular_by_id
 
-    # New purchase resets depletion prediction for Milk (8000 ml -> SUFFICIENT stock -> suppressed in Phase 5B)
+    # New purchase resets depletion prediction for Milk (8000 ml -> SUFFICIENT stock -> suppressed
+    # in Phase 5B)
     await confirm_grocery_item(today.isoformat(), "Toned Milk", 8000, "ml")
-    rec_after = (await client.get("/api/v1/replenishment/recommendations?refresh=true", headers=hdr_a)).json()
+    rec_after = (
+        await client.get("/api/v1/replenishment/recommendations?refresh=true", headers=hdr_a)
+    ).json()
     assert milk_cid not in {x["canonical_item_id"] for x in rec_after["buy_now"]}
     assert milk_cid not in {x["canonical_item_id"] for x in rec_after["regular_purchases"]}
     suppressed_after = {x["canonical_item_id"]: x for x in rec_after["needs_more_data"]}
@@ -234,7 +268,9 @@ async def test_replenishment_patterns_fefo_depletion_units_exclusions_and_isolat
     assert suppressed_after[milk_cid]["eligibility_status"] == "SUPPRESSED"
 
     # Household isolation: Household B sees 0 items
-    rec_b = (await client.get("/api/v1/replenishment/recommendations?refresh=true", headers=hdr_b)).json()
+    rec_b = (
+        await client.get("/api/v1/replenishment/recommendations?refresh=true", headers=hdr_b)
+    ).json()
     assert rec_b["total_tracked_items"] == 0
 
 
@@ -274,7 +310,8 @@ async def test_shopping_list_deduplication_units_feedback_restore_and_no_pantry_
     c = await client.post(f"/api/v1/purchases/{p.json()['id']}/confirm", headers=hdr)
     rice_cid = c.json()["created_lots"][0]["canonical_item_id"]
 
-    # Add Rice from predicted_replenishment (500 g) and then from recipe_missing (1 kg) -> merged to 1500 g, 2 sources preserved
+    # Add Rice from predicted_replenishment (500 g) and then from recipe_missing (1 kg) -> merged
+    # to 1500 g, 2 sources preserved
     add1 = await client.post(
         "/api/v1/shopping-list/items",
         headers=hdr,
@@ -325,7 +362,9 @@ async def test_shopping_list_deduplication_units_feedback_restore_and_no_pantry_
     assert add3.json()["unit_conflict_note"] is not None
 
     # Mark shopping list item as purchased -> MUST NOT create any new inventory lots
-    lots_before = (await client.get("/api/v1/inventory/lots?status=active", headers=hdr)).json()["items"]
+    lots_before = (await client.get("/api/v1/inventory/lots?status=active", headers=hdr)).json()[
+        "items"
+    ]
     patch_res = await client.patch(
         f"/api/v1/shopping-list/items/{merged['id']}",
         headers=hdr,
@@ -333,7 +372,9 @@ async def test_shopping_list_deduplication_units_feedback_restore_and_no_pantry_
     )
     assert patch_res.status_code == 200
     assert patch_res.json()["status"] == "purchased"
-    lots_after = (await client.get("/api/v1/inventory/lots?status=active", headers=hdr)).json()["items"]
+    lots_after = (await client.get("/api/v1/inventory/lots?status=active", headers=hdr)).json()[
+        "items"
+    ]
     assert len(lots_after) == len(lots_before)
 
     # Dismiss recommendation via feedback -> moves to dismissed, then restore -> returns to active
@@ -343,12 +384,16 @@ async def test_shopping_list_deduplication_units_feedback_restore_and_no_pantry_
         json={"action": "dismissed", "reason_snapshot": "Have enough in storage"},
     )
     assert fb_res.status_code == 201
-    recs_dismissed = (await client.get("/api/v1/replenishment/recommendations?refresh=true", headers=hdr)).json()
+    recs_dismissed = (
+        await client.get("/api/v1/replenishment/recommendations?refresh=true", headers=hdr)
+    ).json()
     assert rice_cid in {x["canonical_item_id"] for x in recs_dismissed["dismissed"]}
 
     rest_res = await client.post(f"/api/v1/replenishment/{rice_cid}/restore", headers=hdr)
     assert rest_res.status_code == 204
-    recs_restored = (await client.get("/api/v1/replenishment/recommendations?refresh=true", headers=hdr)).json()
+    recs_restored = (
+        await client.get("/api/v1/replenishment/recommendations?refresh=true", headers=hdr)
+    ).json()
     assert rice_cid not in {x["canonical_item_id"] for x in recs_restored["dismissed"]}
 
 
@@ -369,7 +414,8 @@ async def test_replenishment_ist_midnight_and_utc_date_boundary(
     assert _to_local_date(before_mid_aware, ist, fallback) == date(2026, 11, 20)
     assert _to_local_date(before_mid_naive, ist, fallback) == date(2026, 11, 20)
 
-    # 2. Just after midnight IST: 2026-11-21 00:01 IST == 2026-11-20 18:31 UTC (UTC date != IST date)
+    # 2. Just after midnight IST: 2026-11-21 00:01 IST == 2026-11-20 18:31 UTC (UTC date != IST
+    # date)
     after_mid_aware = datetime(2026, 11, 20, 18, 31, 0, tzinfo=UTC)
     after_mid_naive = datetime(2026, 11, 20, 18, 31, 0)
     assert _to_local_date(after_mid_aware, ist, fallback) == date(2026, 11, 21)
@@ -421,7 +467,9 @@ async def test_replenishment_ist_midnight_and_utc_date_boundary(
 
     async with client._transport.app.state.session_maker() as db:  # type: ignore[attr-defined]
         lot = (
-            await db.execute(select(InventoryLot).where(InventoryLot.canonical_item_id == UUID(cid)))
+            await db.execute(
+                select(InventoryLot).where(InventoryLot.canonical_item_id == UUID(cid))
+            )
         ).scalar_one()
         lot.remaining_qty = Decimal("400")
         db.add(
@@ -440,7 +488,9 @@ async def test_replenishment_ist_midnight_and_utc_date_boundary(
         )
         await db.commit()
 
-    recs = (await client.get("/api/v1/replenishment/recommendations?refresh=true", headers=hdr)).json()
+    recs = (
+        await client.get("/api/v1/replenishment/recommendations?refresh=true", headers=hdr)
+    ).json()
     all_items = {
         x["canonical_item_id"]: x
         for grp in (
@@ -453,6 +503,7 @@ async def test_replenishment_ist_midnight_and_utc_date_boundary(
         for x in grp
     }
     curd_rec = all_items[cid]
-    # Because 00:30 IST today is today_ist (span_days=1), avg_daily_consumption == 100.0 g/day (not 50.0)
+    # Because 00:30 IST today is today_ist (span_days=1), avg_daily_consumption == 100.0 g/day
+    # (not 50.0)
     assert curd_rec["avg_daily_consumption"] == 100.0
     assert curd_rec["estimated_days_remaining"] == 4.0

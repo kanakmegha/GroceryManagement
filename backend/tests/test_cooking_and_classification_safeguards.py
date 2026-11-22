@@ -14,12 +14,15 @@ async def test_cooking_completion_fefo_waste_omission_duplicate_lines_and_safegu
     client: httpx.AsyncClient,
     jwks_provider: EphemeralJWKSProvider,
 ) -> None:
-    """Verify duplicate canonical lines, multi-lot FEFO, actual+waste deduction, omission, cancel, and duplicate completion."""
+    """Verify duplicate canonical lines, multi-lot FEFO, actual+waste deduction, omission, cancel,
+    and duplicate completion.
+    """
     token = jwks_provider.make_token(sub="user_cook_safe", email="cook@example.com", name="Cook")
     headers = {"Authorization": f"Bearer {token}"}
     assert (await client.get("/api/v1/auth/me", headers=headers)).status_code == 200
 
-    # Create Spinach (200g across 2 FEFO lots: 80g expiring sooner, 120g expiring later) and Oil (1000ml)
+    # Create Spinach (200g across 2 FEFO lots: 80g expiring sooner, 120g expiring later) and Oil
+    # (1000ml)
     spinach_cat = await client.post(
         "/api/v1/catalog/items",
         headers=headers,
@@ -31,7 +34,11 @@ async def test_cooking_completion_fefo_waste_omission_duplicate_lines_and_safegu
     oil_cat = await client.post(
         "/api/v1/catalog/items",
         headers=headers,
-        json={"name": "Fortune Soya Health Refined Soyabean Oil", "category": "oils", "default_base_unit": "ml"},
+        json={
+            "name": "Fortune Soya Health Refined Soyabean Oil",
+            "category": "oils",
+            "default_base_unit": "ml",
+        },
     )
     assert oil_cat.status_code == 201
     oil_id = oil_cat.json()["id"]
@@ -67,7 +74,9 @@ async def test_cooking_completion_fefo_waste_omission_duplicate_lines_and_safegu
             "expires_on": (today + timedelta(days=90)).isoformat(),
         },
     )
-    assert lot_soon.status_code == 201 and lot_later.status_code == 201 and lot_oil.status_code == 201
+    assert (
+        lot_soon.status_code == 201 and lot_later.status_code == 201 and lot_oil.status_code == 201
+    )
     lot_soon_id = lot_soon.json()["id"]
     lot_later_id = lot_later.json()["id"]
 
@@ -79,7 +88,12 @@ async def test_cooking_completion_fefo_waste_omission_duplicate_lines_and_safegu
             "recipe_title": "Cancelled Spinach Dish",
             "planned_servings": 2,
             "ingredients": [
-                {"canonical_item_id": spinach_id, "name": "Spinach", "planned_qty": "50.000", "base_unit": "g"}
+                {
+                    "canonical_item_id": spinach_id,
+                    "name": "Spinach",
+                    "planned_qty": "50.000",
+                    "base_unit": "g",
+                }
             ],
         },
     )
@@ -93,7 +107,11 @@ async def test_cooking_completion_fefo_waste_omission_duplicate_lines_and_safegu
 
     # Verify stock untouched after cancel
     lots_check = (await client.get("/api/v1/inventory/lots", headers=headers)).json()["items"]
-    assert sum(Decimal(l["remaining_qty"]) for l in lots_check if l["canonical_item_id"] == spinach_id) == Decimal("200.000")
+    assert sum(
+        Decimal(lot["remaining_qty"])
+        for lot in lots_check
+        if lot["canonical_item_id"] == spinach_id
+    ) == Decimal("200.000")
 
     # Create a plan with TWO lines sharing the SAME canonical_item_id (Spinach) + Oil line
     plan_res = await client.post(
@@ -137,8 +155,17 @@ async def test_cooking_completion_fefo_waste_omission_duplicate_lines_and_safegu
         headers=headers,
         json={
             "items": [
-                {"line_id": "line-spinach-base", "canonical_item_id": spinach_id, "actual_used_qty": "250.000"},
-                {"line_id": "line-spinach-garnish", "canonical_item_id": spinach_id, "actual_used_qty": "0.000", "omitted": True},
+                {
+                    "line_id": "line-spinach-base",
+                    "canonical_item_id": spinach_id,
+                    "actual_used_qty": "250.000",
+                },
+                {
+                    "line_id": "line-spinach-garnish",
+                    "canonical_item_id": spinach_id,
+                    "actual_used_qty": "0.000",
+                    "omitted": True,
+                },
                 {"line_id": "line-oil", "canonical_item_id": oil_id, "actual_used_qty": "100.000"},
             ]
         },
@@ -147,7 +174,8 @@ async def test_cooking_completion_fefo_waste_omission_duplicate_lines_and_safegu
     assert fail_complete.json()["error"]["code"] == "INSUFFICIENT_STOCK"
 
     # Complete with:
-    # - line-spinach-base: 80g used + 10g waste = 90g deducted (depletes 80g soon lot + 10g from later lot -> 110g left)
+    # - line-spinach-base: 80g used + 10g waste = 90g deducted (depletes 80g soon lot + 10g from
+    # later lot -> 110g left)
     # - line-spinach-garnish: omitted -> 0 deducted
     # - line-oil: 100ml used + 0ml waste -> 900ml left
     ok_complete = await client.post(
@@ -190,19 +218,26 @@ async def test_cooking_completion_fefo_waste_omission_duplicate_lines_and_safegu
     assert dup_complete.status_code == 409
 
     # Verify FEFO remaining quantities
-    lots_active = {l["id"]: l for l in (await client.get("/api/v1/inventory/lots", headers=headers)).json()["items"]}
+    lots_active = {
+        lot["id"]: lot
+        for lot in (await client.get("/api/v1/inventory/lots", headers=headers)).json()["items"]
+    }
     assert lot_soon_id not in lots_active
     assert Decimal(lots_active[lot_later_id]["remaining_qty"]) == Decimal("110.000")
     assert Decimal(lots_active[lot_oil.json()["id"]]["remaining_qty"]) == Decimal("900.000")
 
 
 def test_required_classification_pairs() -> None:
-    """Verify raw paneer vs curry, cooking oil vs hair oil, matchbox, scrubber, biscuits, RTE, restaurant meals."""
+    """Verify raw paneer vs curry, cooking oil vs hair oil, matchbox, scrubber, biscuits, RTE,
+    restaurant meals.
+    """
     assert FoodClassificationService.classify_item("Fresh Paneer 200g").pantry_eligible is True
     curry = FoodClassificationService.classify_item("Paneer Butter Masala")
     assert curry.pantry_eligible is False and curry.classification_status == "prepared_meal"
 
-    assert FoodClassificationService.classify_item("Fortune Soyabean Oil 1L").pantry_eligible is True
+    assert (
+        FoodClassificationService.classify_item("Fortune Soyabean Oil 1L").pantry_eligible is True
+    )
     hair_oil = FoodClassificationService.classify_item("Dabur Almond Hair Oil 200ml")
     assert hair_oil.pantry_eligible is False and hair_oil.classification_status == "non_food"
 
@@ -228,7 +263,9 @@ async def test_non_food_cannot_enter_pantry_via_manual_patch_or_confirm_and_llm_
     jwks_provider: EphemeralJWKSProvider,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify non-food items are blocked across manual create, draft PATCH override, and confirm, and test HF LLM fallback."""
+    """Verify non-food items are blocked across manual create, draft PATCH override, and confirm,
+    and test HF LLM fallback.
+    """
     token = jwks_provider.make_token(sub="user_cls_safe", email="cls@example.com", name="Safe")
     headers = {"Authorization": f"Bearer {token}"}
     assert (await client.get("/api/v1/auth/me", headers=headers)).status_code == 200
@@ -315,7 +352,8 @@ async def test_non_food_cannot_enter_pantry_via_manual_patch_or_confirm_and_llm_
     assert patched_by_name["Dabur Almond Hair Oil 200ml"]["track_inventory"] is False
     assert patched_by_name["Utensil Scrubber"]["track_inventory"] is False
 
-    # 3. Confirm purchase -> ONLY Fortune Soyabean Oil enters active pantry; non-food stays in purchase accounting
+    # 3. Confirm purchase -> ONLY Fortune Soyabean Oil enters active pantry; non-food stays in
+    # purchase accounting
     conf = await client.post(f"/api/v1/purchases/{draft['id']}/confirm", headers=headers)
     assert conf.status_code == 200
     assert len(conf.json()["created_lots"]) == 1
@@ -348,7 +386,9 @@ async def test_non_food_cannot_enter_pantry_via_manual_patch_or_confirm_and_llm_
             needs_review=False,
         )
 
-    monkeypatch.setattr(HuggingFaceRecipeProvider, "classify_receipt_item", fake_classify_receipt_item)
+    monkeypatch.setattr(
+        HuggingFaceRecipeProvider, "classify_receipt_item", fake_classify_receipt_item
+    )
     ocr_res = await client.post(
         "/api/v1/purchases/ocr",
         headers=headers,
@@ -366,9 +406,11 @@ async def test_legacy_cooking_plan_without_line_id_backward_compatible(
     jwks_provider: EphemeralJWKSProvider,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Old cooking plans without persisted line_id must synthesize unique line_ids and deduct independently."""
+    """Old cooking plans without persisted line_id must synthesize unique line_ids and deduct
+    independently.
+    """
     from uuid import UUID
-    from sqlalchemy import select
+
     from app.modules.cooking.models import CookingPlan
 
     token = jwks_provider.make_token(sub="user_legacy_plan", email="leg@example.com", name="Legacy")
@@ -398,28 +440,53 @@ async def test_legacy_cooking_plan_without_line_id_backward_compatible(
             "recipe_title": "Legacy Palak",
             "planned_servings": 2,
             "ingredients": [
-                {"canonical_item_id": cid, "name": "Spinach A", "planned_qty": "50.000", "base_unit": "g"},
-                {"canonical_item_id": cid, "name": "Spinach B", "planned_qty": "30.000", "base_unit": "g"},
+                {
+                    "canonical_item_id": cid,
+                    "name": "Spinach A",
+                    "planned_qty": "50.000",
+                    "base_unit": "g",
+                },
+                {
+                    "canonical_item_id": cid,
+                    "name": "Spinach B",
+                    "planned_qty": "30.000",
+                    "base_unit": "g",
+                },
             ],
         },
     )
     assert plan_res.status_code == 201
     plan_id = plan_res.json()["id"]
 
-    # Simulate a pre-migration legacy DB row without line_id and verify _to_plan_out synthesizes unique line_ids
+    # Simulate a pre-migration legacy DB row without line_id and verify _to_plan_out synthesizes
+    # unique line_ids
     from app.modules.cooking import service as cooking_service
 
     legacy_plan = CookingPlan(
         id=UUID(plan_id),
-        household_id=UUID((await client.get("/api/v1/auth/me", headers=headers)).json()["active_household"]["id"]),
-        created_by=UUID((await client.get("/api/v1/auth/me", headers=headers)).json()["user"]["id"]),
+        household_id=UUID(
+            (await client.get("/api/v1/auth/me", headers=headers)).json()["active_household"]["id"]
+        ),
+        created_by=UUID(
+            (await client.get("/api/v1/auth/me", headers=headers)).json()["user"]["id"]
+        ),
         recipe_title="Legacy Palak",
         status="planned",
         planned_servings=2,
         started_at=datetime.now(UTC),
         ingredients=[
-            {"canonical_item_id": cid, "name": "Spinach A", "planned_qty": "50.000", "base_unit": "g"},
-            {"canonical_item_id": cid, "name": "Spinach B", "planned_qty": "30.000", "base_unit": "g"},
+            {
+                "canonical_item_id": cid,
+                "name": "Spinach A",
+                "planned_qty": "50.000",
+                "base_unit": "g",
+            },
+            {
+                "canonical_item_id": cid,
+                "name": "Spinach B",
+                "planned_qty": "30.000",
+                "base_unit": "g",
+            },
         ],
     )
     synthesized = cooking_service._to_plan_out(legacy_plan)
@@ -460,29 +527,46 @@ async def test_hf_receipt_classification_failure_modes_and_low_confidence_safety
     jwks_provider: EphemeralJWKSProvider,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify HTTP 429, 5xx, ReadTimeout, invalid JSON, missing fields, low confidence, and unknown state stay pending review."""
-    import json as _json
-    from app.modules.catalog.classifier import classify_with_household_db
+    """Verify HTTP 429, 5xx, ReadTimeout, invalid JSON, missing fields, low confidence, and unknown
+    state stay pending review.
+    """
 
     # 1. Provider-level failure modes via MockTransport
     failure_transports = [
         httpx.MockTransport(lambda req: httpx.Response(429, json={"error": "rate limited"})),
-        httpx.MockTransport(lambda req: httpx.Response(503, json={"error": "upstream unavailable"})),
-        httpx.MockTransport(lambda req: (_ for _ in ()).throw(httpx.ReadTimeout("timed out", request=req))),
-        httpx.MockTransport(lambda req: httpx.Response(200, json={"choices": [{"message": {"content": "NOT_JSON"}}]})),
-        httpx.MockTransport(lambda req: httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})),
+        httpx.MockTransport(
+            lambda req: httpx.Response(503, json={"error": "upstream unavailable"})
+        ),
+        httpx.MockTransport(
+            lambda req: (_ for _ in ()).throw(httpx.ReadTimeout("timed out", request=req))
+        ),
+        httpx.MockTransport(
+            lambda req: httpx.Response(
+                200, json={"choices": [{"message": {"content": "NOT_JSON"}}]}
+            )
+        ),
+        httpx.MockTransport(
+            lambda req: httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+        ),
     ]
     for tr in failure_transports:
         prov = HuggingFaceRecipeProvider(hf_token="hf_test_dummy", transport=tr)
-        res = await prov.classify_receipt_item(raw_name="Mystery Pack 250g", receipt_category="grocery")
+        res = await prov.classify_receipt_item(
+            raw_name="Mystery Pack 250g", receipt_category="grocery"
+        )
         assert res is None
 
-    # 2. Low confidence & unknown food_state returned by LLM must STILL be forced to requires_user_review
-    token = jwks_provider.make_token(sub="user_hf_fail_safe", email="hf@example.com", name="HF Safe")
+    # 2. Low confidence & unknown food_state returned by LLM must STILL be forced to
+    # requires_user_review
+    token = jwks_provider.make_token(
+        sub="user_hf_fail_safe", email="hf@example.com", name="HF Safe"
+    )
     headers = {"Authorization": f"Bearer {token}"}
     assert (await client.get("/api/v1/auth/me", headers=headers)).status_code == 200
 
-    async def low_conf_llm(self, *, raw_name: str, receipt_category: str = "grocery", merchant_name: str | None = None):
+    async def low_conf_llm(
+        self, *, raw_name: str, receipt_category: str = "grocery", merchant_name: str | None = None
+    ):
         from app.infra.llm.hf_provider import ReceiptItemLLMClassification
 
         return ReceiptItemLLMClassification(
@@ -508,7 +592,9 @@ async def test_hf_receipt_classification_failure_modes_and_low_confidence_safety
     assert item_low["track_inventory"] is False
     assert item_low["budget_treatment"] == "requires_user_review"
 
-    async def unknown_state_llm(self, *, raw_name: str, receipt_category: str = "grocery", merchant_name: str | None = None):
+    async def unknown_state_llm(
+        self, *, raw_name: str, receipt_category: str = "grocery", merchant_name: str | None = None
+    ):
         from app.infra.llm.hf_provider import ReceiptItemLLMClassification
 
         return ReceiptItemLLMClassification(
@@ -545,7 +631,9 @@ async def test_unit_mismatch_milk_chocolate_collision_and_missing_ingredient_res
     client: httpx.AsyncClient,
     jwks_provider: EphemeralJWKSProvider,
 ) -> None:
-    """Reproduce Part 7 scenarios: Milk vs Amul Milk Chocolate, 1 pcs Ice Cream vs 50 g, empty plan name enrichment, and I have it / I bought it."""
+    """Reproduce Part 7 scenarios: Milk vs Amul Milk Chocolate, 1 pcs Ice Cream vs 50 g, empty plan
+    name enrichment, and I have it / I bought it.
+    """
     from app.modules.recipes.grounding import reconcile_ingredient
 
     inv = [
@@ -643,7 +731,11 @@ async def test_unit_mismatch_milk_chocolate_collision_and_missing_ingredient_res
     assert conf_pur.status_code == 200
     assert len(conf_pur.json()["created_lots"]) == 1
     lots_all = (await client.get("/api/v1/inventory/lots", headers=headers)).json()["items"]
-    assert any(l["canonical_item_id"] == banana_id and Decimal(l["remaining_qty"]) == Decimal("3.000") for l in lots_all)
-    assert any("milk" in l["item_name"].lower() and Decimal(l["remaining_qty"]) == Decimal("500.000") for l in lots_all)
-
-
+    assert any(
+        lot["canonical_item_id"] == banana_id and Decimal(lot["remaining_qty"]) == Decimal("3.000")
+        for lot in lots_all
+    )
+    assert any(
+        "milk" in lot["item_name"].lower() and Decimal(lot["remaining_qty"]) == Decimal("500.000")
+        for lot in lots_all
+    )

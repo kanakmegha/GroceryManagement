@@ -18,7 +18,8 @@ def validate_extracted_receipt(receipt: ExtractedReceipt) -> ExtractedReceipt:
                 code="OCR_PROVIDER_UNAVAILABLE",
                 severity="error",
                 message=(
-                    "No OCR engine is available on this host. Install tesseract-ocr (Linux/Docker), "
+                    "No OCR engine is available on this host. Install tesseract-ocr "
+                    "(Linux/Docker), "
                     "run on macOS Apple Vision, or enable a cloud OCR/VLM provider."
                 ),
                 field="adapter_used",
@@ -89,7 +90,8 @@ def validate_extracted_receipt(receipt: ExtractedReceipt) -> ExtractedReceipt:
                 else:
                     msg = (
                         f"Line math mismatch on '{line.name}': "
-                        f"{line.quantity} x ₹{line.unit_price_paise / 100:.2f} != ₹{line.total_paise / 100:.2f}."
+                        f"{line.quantity} x ₹{line.unit_price_paise / 100:.2f} != "
+                        f"₹{line.total_paise / 100:.2f}."
                     )
                     line.warnings.append(msg)
                     issues.append(
@@ -115,7 +117,10 @@ def validate_extracted_receipt(receipt: ExtractedReceipt) -> ExtractedReceipt:
 
         dup_key = ((line.normalized_name or line.name).strip().lower(), line.total_paise)
         if dup_key in seen_lines and dup_key[0]:
-            msg = f"Possible duplicate line item '{line.name}' (lines {seen_lines[dup_key] + 1} and {idx + 1})."
+            msg = (
+                f"Possible duplicate line item '{line.name}' (lines {seen_lines[dup_key] + 1} "
+                f"and {idx + 1})."
+            )
             warnings.append(msg)
             issues.append(
                 ValidationIssue(
@@ -167,7 +172,8 @@ def validate_extracted_receipt(receipt: ExtractedReceipt) -> ExtractedReceipt:
                 )
             )
 
-        # Check 100x decimal-drop OCR anomaly against taxable + taxes (e.g. '18164' -> 1816400 vs 181.64)
+        # Check 100x decimal-drop OCR anomaly against taxable + taxes (e.g. '18164' -> 1816400 vs
+        # 181.64)
         if (
             line.taxable_paise is not None
             and line.total_paise is not None
@@ -175,8 +181,14 @@ def validate_extracted_receipt(receipt: ExtractedReceipt) -> ExtractedReceipt:
             and line.taxable_paise > 0
         ):
             expected_with_tax = line.taxable_paise + line_tax_sum
-            if abs((line.total_paise / 100.0) - expected_with_tax) <= max(100, int(0.05 * expected_with_tax)):
-                msg = f"Possible 100x decimal-drop error on '{line.name}' total (₹{line.total_paise / 100:.2f} vs taxable+tax ₹{expected_with_tax / 100:.2f})."
+            if abs((line.total_paise / 100.0) - expected_with_tax) <= max(
+                100, int(0.05 * expected_with_tax)
+            ):
+                msg = (
+                    f"Possible 100x decimal-drop error on '{line.name}' total "
+                    f"(₹{line.total_paise / 100:.2f} vs taxable+tax "
+                    f"₹{expected_with_tax / 100:.2f})."
+                )
                 line.warnings.append(msg)
                 warnings.append(msg)
                 line.needs_review = True
@@ -194,7 +206,10 @@ def validate_extracted_receipt(receipt: ExtractedReceipt) -> ExtractedReceipt:
     if len(serial_nums) >= 2:
         expected_seq = list(range(serial_nums[0], serial_nums[0] + len(serial_nums)))
         if serial_nums != expected_seq:
-            msg = f"Discontinuous serial numbers detected ({serial_nums}); some product rows may be missing."
+            msg = (
+                f"Discontinuous serial numbers detected ({serial_nums}); some product rows "
+                "may be missing."
+            )
             warnings.append(msg)
             issues.append(
                 ValidationIssue(
@@ -222,7 +237,8 @@ def validate_extracted_receipt(receipt: ExtractedReceipt) -> ExtractedReceipt:
         and (receipt.lines[0].quantity or 0) < receipt.printed_item_qty * 0.5
     ):
         incomplete_reasons.append(
-            f"extracted 1 item (qty {receipt.lines[0].quantity or 0:g}) vs printed item qty {receipt.printed_item_qty:g}"
+            f"extracted 1 item (qty {receipt.lines[0].quantity or 0:g}) vs printed item "
+            f"qty {receipt.printed_item_qty:g}"
         )
     if (
         len(receipt.lines) == 1
@@ -232,7 +248,8 @@ def validate_extracted_receipt(receipt: ExtractedReceipt) -> ExtractedReceipt:
         and receipt.lines[0].total_paise < receipt.grand_total_paise * 0.3
     ):
         incomplete_reasons.append(
-            f"single item ₹{receipt.lines[0].total_paise / 100:.2f} is far below printed total ₹{receipt.grand_total_paise / 100:.2f}"
+            f"single item ₹{receipt.lines[0].total_paise / 100:.2f} is far below printed "
+            f"total ₹{receipt.grand_total_paise / 100:.2f}"
         )
 
     is_incomplete_extraction = bool(incomplete_reasons)
@@ -287,7 +304,9 @@ def validate_extracted_receipt(receipt: ExtractedReceipt) -> ExtractedReceipt:
     base_subtotal = receipt.subtotal_paise if receipt.subtotal_paise is not None else lines_sum
     extra_charges = receipt.additional_charges_paise or 0
     if extra_charges == 0 and (receipt.handling_charges_paise or receipt.delivery_charges_paise):
-        extra_charges = (receipt.handling_charges_paise or 0) + (receipt.delivery_charges_paise or 0)
+        extra_charges = (receipt.handling_charges_paise or 0) + (
+            receipt.delivery_charges_paise or 0
+        )
     total_discounts = receipt.discount_paise or 0
     if total_discounts == 0 and receipt.loyalty_discount_paise:
         total_discounts = receipt.loyalty_discount_paise
@@ -327,7 +346,9 @@ def validate_extracted_receipt(receipt: ExtractedReceipt) -> ExtractedReceipt:
             ValidationIssue(
                 code="MISSING_GRAND_TOTAL",
                 severity="info",
-                message="Printed grand total was not detected; using computed total for draft review.",
+                message=(
+                    "Printed grand total was not detected; using computed total for draft review."
+                ),
                 field="grand_total_paise",
             )
         )
@@ -342,7 +363,8 @@ def validate_extracted_receipt(receipt: ExtractedReceipt) -> ExtractedReceipt:
                 code="OCR_PROVIDER_UNAVAILABLE",
                 severity="error",
                 message=(
-                    "No OCR engine is available on this host. Install tesseract-ocr (Linux/Docker), "
+                    "No OCR engine is available on this host. Install tesseract-ocr "
+                    "(Linux/Docker), "
                     "run on macOS Apple Vision, or enable a cloud OCR/VLM provider."
                 ),
                 field="adapter_used",

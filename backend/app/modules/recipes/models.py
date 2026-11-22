@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, String, Text, Uuid
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -36,12 +36,12 @@ class HouseholdRecipePreference(Base):
 
 
 class RecipeFeedback(Base):
-    """Lightweight per-household feedback for recipe recommendations (like, dislike, cooked, hide)."""
+    """Lightweight per-household feedback for recipe recommendations (like, dislike, cooked,
+    hide).
+    """
 
     __tablename__ = "recipe_feedback"
-    __table_args__ = (
-        Index("ix_recipe_feedback_hh_recipe", "household_id", "recipe_id"),
-    )
+    __table_args__ = (Index("ix_recipe_feedback_hh_recipe", "household_id", "recipe_id"),)
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     household_id: Mapped[UUID] = mapped_column(

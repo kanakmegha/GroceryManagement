@@ -256,7 +256,9 @@ async def test_phase5a_soft_merge_chana_bal_potato_groups_and_isolation(
     assert all(x["name"] != "• Chana Bal" for x in cat_res)
 
     # 7 & 8. Potatoes in g and pcs remain separate unit groups under Potato ingredient
-    ing_cat = (await client.get("/api/v1/inventory/ingredients/catalog", headers=hdr_a)).json()["items"]
+    ing_cat = (await client.get("/api/v1/inventory/ingredients/catalog", headers=hdr_a)).json()[
+        "items"
+    ]
     pot_ing_id = [x["id"] for x in ing_cat if x["normalized_name"] == "potato"][0]
     for pid in (pot_g_id, pot_pcs_id):
         assert (
@@ -267,7 +269,9 @@ async def test_phase5a_soft_merge_chana_bal_potato_groups_and_isolation(
             )
         ).status_code == 200
 
-    ing_sum = (await client.get("/api/v1/inventory/ingredients/summary", headers=hdr_a)).json()["ingredients"]
+    ing_sum = (await client.get("/api/v1/inventory/ingredients/summary", headers=hdr_a)).json()[
+        "ingredients"
+    ]
     pot_sum = [x for x in ing_sum if x["normalized_name"] == "potato"][0]
     assert pot_sum["unit_completeness_status"] == "incomplete"
     assert pot_sum["total_remaining_qty"] is None

@@ -33,9 +33,8 @@ def classify_document_type(
     if page_count > 1 and source_type in ("pdf_digital", "pdf_scanned"):
         return "multi_page_invoice"
 
-    has_gst_table = (
-        ("hsn" in lower or "gstin" in lower)
-        and ("cgst" in lower or "sgst" in lower or "igst" in lower or "taxable" in lower)
+    has_gst_table = ("hsn" in lower or "gstin" in lower) and (
+        "cgst" in lower or "sgst" in lower or "igst" in lower or "taxable" in lower
     )
     if has_gst_table and has_table_headers:
         return "gst_invoice"
@@ -72,7 +71,10 @@ def classify_document_type(
     # Payment confirmation screen without itemized products
     if (
         parsed_line_count == 0
-        and any(k in lower for k in ("payment successful", "paid via", "transaction id", "utr", "upi ref"))
+        and any(
+            k in lower
+            for k in ("payment successful", "paid via", "transaction id", "utr", "upi ref")
+        )
         and not has_table_headers
     ):
         return "payment_confirmation"
@@ -83,7 +85,9 @@ def classify_document_type(
     if has_order_id and parsed_line_count > 0:
         return "order_item_list"
 
-    if parsed_line_count > 0 or any(k in lower for k in ("cash memo", "bill no", "grand total", "subtotal", "receipt")):
+    if parsed_line_count > 0 or any(
+        k in lower for k in ("cash memo", "bill no", "grand total", "subtotal", "receipt")
+    ):
         return "physical_receipt"
 
     return "unknown"

@@ -171,7 +171,22 @@ _UNIT_FACTORS: dict[str, tuple[MeasurementDimension, str, Decimal]] = {
     "dozen": ("COUNT", "pcs", Decimal("12")),
 }
 
-_PACK_WORDS = {"pack", "packs", "pkt", "pkts", "packet", "packets", "box", "boxes", "pouch", "pouches", "bottle", "bottles", "carton", "cartons"}
+_PACK_WORDS = {
+    "pack",
+    "packs",
+    "pkt",
+    "pkts",
+    "packet",
+    "packets",
+    "box",
+    "boxes",
+    "pouch",
+    "pouches",
+    "bottle",
+    "bottles",
+    "carton",
+    "cartons",
+}
 
 _PACK_COUNT_RE = re.compile(
     r"^\s*(\d+(?:\.\d+)?)\s*(?:x|\*)?\s*(?:pack|packs|pkt|pkts|packet|packets|box|boxes|pouch|pouches|bottle|bottles)\b",
@@ -223,7 +238,10 @@ def normalize_grocery_quantity(
                 conversion_factor=None,
                 provenance="unknown_package_net_qty",
                 needs_review=True,
-                warning=f"Package quantity '{pack_count} {u or 'packet'}' has no explicit net weight/volume.",
+                warning=(
+                    f"Package quantity '{pack_count} {u or 'packet'}' has no explicit net "
+                    "weight/volume."
+                ),
             )
         net_val = Decimal(net_match.group(1))
         net_unit = net_match.group(2).lower()

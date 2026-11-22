@@ -75,9 +75,7 @@ async def ocr_purchase_draft(
 
         merchant_raw = form.get("merchant_name")
         purchased_raw = form.get("purchased_on")
-        purchased_on = (
-            date.fromisoformat(str(purchased_raw)) if purchased_raw else None
-        )
+        purchased_on = date.fromisoformat(str(purchased_raw)) if purchased_raw else None
         if len(file_tuples) == 1:
             f_bytes, f_name, f_ct = file_tuples[0]
             return await create_ocr_draft(

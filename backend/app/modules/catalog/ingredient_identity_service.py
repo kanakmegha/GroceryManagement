@@ -28,16 +28,55 @@ MEDIUM_THRESHOLD = Decimal("0.650")
 
 # Descriptive attributes preserved separately rather than discarded
 _ATTRIBUTE_TOKENS = {
-    "fresh", "red", "green", "yellow", "white", "black", "brown", "organic",
-    "natural", "pure", "raw", "ripe", "baby", "small", "large", "desi",
-    "hybrid", "premium", "select", "unpolished", "polished", "cold", "pressed",
+    "fresh",
+    "red",
+    "green",
+    "yellow",
+    "white",
+    "black",
+    "brown",
+    "organic",
+    "natural",
+    "pure",
+    "raw",
+    "ripe",
+    "baby",
+    "small",
+    "large",
+    "desi",
+    "hybrid",
+    "premium",
+    "select",
+    "unpolished",
+    "polished",
+    "cold",
+    "pressed",
 }
 
 # Physical/processing forms that alter cooking identity
 _FORM_TOKENS = {
-    "puree", "paste", "sauce", "ketchup", "powder", "flour", "atta", "maida",
-    "besan", "flakes", "poha", "whole", "split", "crushed", "chopped", "dried",
-    "frozen", "roasted", "milk", "oil", "ghee", "butter",
+    "puree",
+    "paste",
+    "sauce",
+    "ketchup",
+    "powder",
+    "flour",
+    "atta",
+    "maida",
+    "besan",
+    "flakes",
+    "poha",
+    "whole",
+    "split",
+    "crushed",
+    "chopped",
+    "dried",
+    "frozen",
+    "roasted",
+    "milk",
+    "oil",
+    "ghee",
+    "butter",
 }
 
 _PACK_RE = re.compile(
@@ -45,7 +84,8 @@ _PACK_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Canonical naming dictionary: normalized_alias/transliteration -> (canonical_normalized_name, preferred_english_name, language)
+# Canonical naming dictionary: normalized_alias/transliteration -> (canonical_normalized_name,
+# preferred_english_name, language)
 CANONICAL_NAMING_DICTIONARY: dict[str, tuple[str, str, str]] = {
     "badam": ("almonds", "Almonds", "hi"),
     "almond": ("almonds", "Almonds", "en"),
@@ -212,9 +252,7 @@ def normalize_ingredient_name_key(value: str) -> str:
     """
     nfkc = unicodedata.normalize("NFKC", value)
     # Remove invisible format/control characters (Cf, Cc)
-    visible = "".join(
-        ch for ch in nfkc if unicodedata.category(ch) not in {"Cf", "Cc"}
-    )
+    visible = "".join(ch for ch in nfkc if unicodedata.category(ch) not in {"Cf", "Cc"})
     folded = visible.casefold()
     # Replace separator hyphens and underscores with spaces
     sep_norm = re.sub(r"[-_\u2013\u2014]+", " ", folded)
@@ -224,7 +262,9 @@ def normalize_ingredient_name_key(value: str) -> str:
 
 
 def _generate_token_ocr_variants(token: str) -> list[str]:
-    """Generate context-aware OCR substitutions ONLY for alphabetic/mixed tokens (never pure numbers)."""
+    """Generate context-aware OCR substitutions ONLY for alphabetic/mixed tokens (never pure
+    numbers).
+    """
     if not any(ch.isalpha() for ch in token) or not any(ch in _OCR_DIGIT_SUBS for ch in token):
         return [token]
     variants = [""]
@@ -298,7 +338,9 @@ def normalize_ingredient_input(raw_text: str) -> NormalizedIngredientInfo:
     # Context-aware OCR candidate phrases (only when mixed alphanumeric OCR digits exist)
     ocr_candidates: list[str] = []
     normalization_ops: list[str] = []
-    if any(any(c.isalpha() for c in w) and any(c in _OCR_DIGIT_SUBS for c in w) for w in core_words):
+    if any(
+        any(c.isalpha() for c in w) and any(c in _OCR_DIGIT_SUBS for c in w) for w in core_words
+    ):
         per_word_opts = [_generate_token_ocr_variants(w) for w in core_words]
         combos = [""]
         for opts in per_word_opts:
@@ -331,15 +373,16 @@ def are_ingredients_incompatible(norm_a: str, norm_b: str) -> bool:
     if frozenset({norm_a, norm_b}) in _INCOMPATIBLE_PAIRS:
         return True
     # Processed form vs raw whole produce guard
-    if (norm_a.endswith("_puree") or norm_a.endswith("_paste") or norm_a.endswith("_flour")) and not (
-        norm_b.endswith("_puree") or norm_b.endswith("_paste") or norm_b.endswith("_flour")
-    ):
-        return True
-    if (norm_b.endswith("_puree") or norm_b.endswith("_paste") or norm_b.endswith("_flour")) and not (
+    if (
         norm_a.endswith("_puree") or norm_a.endswith("_paste") or norm_a.endswith("_flour")
-    ):
+    ) and not (norm_b.endswith("_puree") or norm_b.endswith("_paste") or norm_b.endswith("_flour")):
         return True
-    return False
+    return bool(
+        (norm_b.endswith("_puree") or norm_b.endswith("_paste") or norm_b.endswith("_flour"))
+        and not (
+            norm_a.endswith("_puree") or norm_a.endswith("_paste") or norm_a.endswith("_flour")
+        )
+    )
 
 
 async def resolve_ingredient_identity(
@@ -362,11 +405,15 @@ async def resolve_ingredient_identity(
     by_id = {ing.id: ing for ing in ingredients}
 
     # 1. Database-backed approved IngredientAlias lookup (household-first, then global)
-    lookup_phrases = list(dict.fromkeys([
-        norm.core_normalized_name.replace("_", " "),
-        raw_name.strip().lower(),
-        *norm.synonyms,
-    ]))
+    lookup_phrases = list(
+        dict.fromkeys(
+            [
+                norm.core_normalized_name.replace("_", " "),
+                raw_name.strip().lower(),
+                *norm.synonyms,
+            ]
+        )
+    )
     if household_id is not None:
         alias_stmt = (
             select(IngredientAlias)
@@ -421,7 +468,10 @@ async def resolve_ingredient_identity(
         for cand_phrase in norm.ocr_candidates:
             cand_norm_info = normalize_ingredient_input(cand_phrase)
             for ing in ingredients:
-                if ing.normalized_name == cand_norm_info.core_normalized_name and ing.id not in seen_ids:
+                if (
+                    ing.normalized_name == cand_norm_info.core_normalized_name
+                    and ing.id not in seen_ids
+                ):
                     matched_ocr_ings.append(ing)
                     seen_ids.add(ing.id)
         if len(matched_ocr_ings) == 1:
@@ -620,9 +670,7 @@ async def get_or_create_canonical_ingredient(
             )
 
     if res.tier == "medium" and not allow_create_on_medium:
-        return IngredientCreationOutcome(
-            ingredient=None, action="review_required", resolution=res
-        )
+        return IngredientCreationOutcome(ingredient=None, action="review_required", resolution=res)
 
     key_norm = normalize_ingredient_name_key(name).replace(" ", "_")
     norm_name = res.normalized.core_normalized_name or key_norm
@@ -641,15 +689,11 @@ async def get_or_create_canonical_ingredient(
             )
             db.add(ing)
             await db.flush()
-        return IngredientCreationOutcome(
-            ingredient=ing, action="created_new", resolution=res
-        )
+        return IngredientCreationOutcome(ingredient=ing, action="created_new", resolution=res)
     except IntegrityError:
         existing = (
             await db.execute(
-                select(CanonicalIngredient).where(
-                    CanonicalIngredient.normalized_name == norm_name
-                )
+                select(CanonicalIngredient).where(CanonicalIngredient.normalized_name == norm_name)
             )
         ).scalar_one_or_none()
         if existing is None:
@@ -697,16 +741,18 @@ async def audit_ingredient_duplicates_v2(db: AsyncSession) -> list[DuplicateAudi
     )
     map_rows = (
         await db.execute(
-            select(IngredientMapping.canonical_ingredient_id, func.count(IngredientMapping.id))
-            .group_by(IngredientMapping.canonical_ingredient_id)
+            select(
+                IngredientMapping.canonical_ingredient_id, func.count(IngredientMapping.id)
+            ).group_by(IngredientMapping.canonical_ingredient_id)
         )
     ).all()
     map_cnts = {r[0]: int(r[1]) for r in map_rows}
 
     al_rows = (
         await db.execute(
-            select(IngredientAlias.canonical_ingredient_id, func.count(IngredientAlias.id))
-            .group_by(IngredientAlias.canonical_ingredient_id)
+            select(
+                IngredientAlias.canonical_ingredient_id, func.count(IngredientAlias.id)
+            ).group_by(IngredientAlias.canonical_ingredient_id)
         )
     ).all()
     al_cnts = {r[0]: int(r[1]) for r in al_rows}
@@ -740,7 +786,9 @@ async def audit_ingredient_duplicates_v2(db: AsyncSession) -> list[DuplicateAudi
     # B. Spelling / core duplicates (same core_normalized_name but different formatting key)
     by_core: dict[str, list[CanonicalIngredient]] = {}
     for ing in ings:
-        by_core.setdefault(normalize_ingredient_input(ing.name).core_normalized_name, []).append(ing)
+        by_core.setdefault(normalize_ingredient_input(ing.name).core_normalized_name, []).append(
+            ing
+        )
     for k, grp in by_core.items():
         if len(grp) >= 2 and len({normalize_ingredient_name_key(g.name) for g in grp}) > 1:
             clusters.append(
@@ -763,7 +811,7 @@ async def audit_ingredient_duplicates_v2(db: AsyncSession) -> list[DuplicateAudi
 
     # E. Similar but distinct (incompatible pairs present in DB)
     by_norm = {ing.normalized_name: ing for ing in ings}
-    for pair in sorted((sorted(p) for p in _INCOMPATIBLE_PAIRS)):
+    for pair in sorted(sorted(p) for p in _INCOMPATIBLE_PAIRS):
         a_norm, b_norm = pair[0], pair[1]
         if a_norm in by_norm and b_norm in by_norm:
             ga, gb = by_norm[a_norm], by_norm[b_norm]
@@ -773,11 +821,20 @@ async def audit_ingredient_duplicates_v2(db: AsyncSession) -> list[DuplicateAudi
                     cluster_key=f"{a_norm}__vs__{b_norm}",
                     ingredient_ids=[ga.id, gb.id],
                     original_names=[ga.name, gb.name],
-                    normalized_keys=[normalize_ingredient_name_key(ga.name), normalize_ingredient_name_key(gb.name)],
+                    normalized_keys=[
+                        normalize_ingredient_name_key(ga.name),
+                        normalize_ingredient_name_key(gb.name),
+                    ],
                     categories=[ga.category, gb.category],
                     standard_units=[ga.standard_unit, gb.standard_unit],
-                    alias_counts={str(ga.id): al_cnts.get(ga.id, 0), str(gb.id): al_cnts.get(gb.id, 0)},
-                    mapping_counts={str(ga.id): map_cnts.get(ga.id, 0), str(gb.id): map_cnts.get(gb.id, 0)},
+                    alias_counts={
+                        str(ga.id): al_cnts.get(ga.id, 0),
+                        str(gb.id): al_cnts.get(gb.id, 0),
+                    },
+                    mapping_counts={
+                        str(ga.id): map_cnts.get(ga.id, 0),
+                        str(gb.id): map_cnts.get(gb.id, 0),
+                    },
                     compatible=False,
                     confidence_tier="high",
                     suggested_survivor_id=None,
@@ -786,4 +843,3 @@ async def audit_ingredient_duplicates_v2(db: AsyncSession) -> list[DuplicateAudi
             )
 
     return clusters
-

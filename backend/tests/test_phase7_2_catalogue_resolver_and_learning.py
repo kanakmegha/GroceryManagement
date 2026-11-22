@@ -1,13 +1,13 @@
-"""Phase 7.2 tests: Household Ingredient Catalogue, IngredientResolver, brand deduplication, and household learning."""
+"""Phase 7.2 tests: Household Ingredient Catalogue, IngredientResolver, brand deduplication, and
+household learning.
+"""
 
-from datetime import date
-from decimal import Decimal
 import uuid
+from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import build_async_engine, build_session_maker
 from app.modules.catalog.ingredient_catalogue import (
@@ -26,7 +26,6 @@ from app.modules.catalog.ingredient_mapping_service import (
 from app.modules.catalog.ingredient_resolver import IngredientResolver
 from app.modules.inventory.ingredient_aggregation_service import (
     convert_to_target_unit,
-    get_ingredient_inventory_summary,
 )
 from app.modules.inventory.models import CanonicalIngredient, CanonicalItem, IngredientAlias
 from app.modules.recipes.grounding import match_inventory_item
@@ -69,7 +68,9 @@ def test_phase7_2_ingredient_resolver_priority_and_boundary_matching() -> None:
     for text, expected_vid, expected_name in cases:
         res = resolver.resolve_text(text)
         assert res.requires_review is False, f"{text} unexpectedly required review: {res.reason}"
-        assert res.variant_id == expected_vid, f"{text}: got {res.variant_id}, expected {expected_vid}"
+        assert res.variant_id == expected_vid, (
+            f"{text}: got {res.variant_id}, expected {expected_vid}"
+        )
         assert res.variant_name == expected_name
 
     # Brand name alone must NOT determine an ingredient
@@ -131,8 +132,10 @@ async def test_phase7_2_brand_dedup_idempotency_and_household_learning(
 ) -> None:
     sub_a = f"user-a-{uuid.uuid4().hex[:8]}"
     sub_b = f"user-b-{uuid.uuid4().hex[:8]}"
-    headers_a = {"Authorization": f"Bearer {jwks_provider.make_token(sub=sub_a, email=f'{sub_a}@example.com')}"}
-    headers_b = {"Authorization": f"Bearer {jwks_provider.make_token(sub=sub_b, email=f'{sub_b}@example.com')}"}
+    tok_a = jwks_provider.make_token(sub=sub_a, email=f"{sub_a}@example.com")
+    tok_b = jwks_provider.make_token(sub=sub_b, email=f"{sub_b}@example.com")
+    headers_a = {"Authorization": f"Bearer {tok_a}"}
+    headers_b = {"Authorization": f"Bearer {tok_b}"}
 
     me_a = await client.get("/api/v1/auth/me", headers=headers_a)
     me_b = await client.get("/api/v1/auth/me", headers=headers_b)
@@ -143,24 +146,55 @@ async def test_phase7_2_brand_dedup_idempotency_and_household_learning(
     sm = build_session_maker(engine)
 
     async with sm() as db:  # type: AsyncSession
-        s1 = await sync_catalogue_to_db(db)
+        await sync_catalogue_to_db(db)
         s2 = await sync_catalogue_to_db(db)
         assert s2["created"] == 0  # Idempotent
 
         # Create 2 brands of Toned Milk + 1 Full Cream Milk
-        item_amul = CanonicalItem(household_id=hh_a, slug=f"amul-toned-{uuid.uuid4().hex[:6]}", name="Amul Taaza Toned Milk", category="dairy", default_base_unit="ml")
-        item_mother = CanonicalItem(household_id=hh_a, slug=f"md-toned-{uuid.uuid4().hex[:6]}", name="Mother Dairy Toned Milk", category="dairy", default_base_unit="ml")
-        item_fc = CanonicalItem(household_id=hh_a, slug=f"amul-fc-{uuid.uuid4().hex[:6]}", name="Amul Gold Full Cream Milk", category="dairy", default_base_unit="ml")
-        item_custom = CanonicalItem(household_id=hh_a, slug=f"custom-xyz-{uuid.uuid4().hex[:6]}", name="Ghar Ka Special Masala X99", category="spices_seasonings", default_base_unit="g")
+        item_amul = CanonicalItem(
+            household_id=hh_a,
+            slug=f"amul-toned-{uuid.uuid4().hex[:6]}",
+            name="Amul Taaza Toned Milk",
+            category="dairy",
+            default_base_unit="ml",
+        )
+        item_mother = CanonicalItem(
+            household_id=hh_a,
+            slug=f"md-toned-{uuid.uuid4().hex[:6]}",
+            name="Mother Dairy Toned Milk",
+            category="dairy",
+            default_base_unit="ml",
+        )
+        item_fc = CanonicalItem(
+            household_id=hh_a,
+            slug=f"amul-fc-{uuid.uuid4().hex[:6]}",
+            name="Amul Gold Full Cream Milk",
+            category="dairy",
+            default_base_unit="ml",
+        )
+        item_custom = CanonicalItem(
+            household_id=hh_a,
+            slug=f"custom-xyz-{uuid.uuid4().hex[:6]}",
+            name="Ghar Ka Special Masala X99",
+            category="spices_seasonings",
+            default_base_unit="g",
+        )
         db.add_all([item_amul, item_mother, item_fc, item_custom])
         await db.flush()
 
         res_amul = await resolve_or_suggest_mapping(db, household_id=hh_a, canonical_item=item_amul)
-        res_mother = await resolve_or_suggest_mapping(db, household_id=hh_a, canonical_item=item_mother)
+        res_mother = await resolve_or_suggest_mapping(
+            db, household_id=hh_a, canonical_item=item_mother
+        )
         res_fc = await resolve_or_suggest_mapping(db, household_id=hh_a, canonical_item=item_fc)
-        res_custom_unconf = await resolve_or_suggest_mapping(db, household_id=hh_a, canonical_item=item_custom)
+        res_custom_unconf = await resolve_or_suggest_mapping(
+            db, household_id=hh_a, canonical_item=item_custom
+        )
 
-        assert res_amul.suggested_ingredient is not None and res_mother.suggested_ingredient is not None
+        assert (
+            res_amul.suggested_ingredient is not None
+            and res_mother.suggested_ingredient is not None
+        )
         assert res_amul.suggested_ingredient.id == res_mother.suggested_ingredient.id
         assert res_amul.suggested_ingredient.variant_id == "milk__toned_milk"
         assert res_fc.suggested_ingredient is not None
@@ -173,14 +207,21 @@ async def test_phase7_2_brand_dedup_idempotency_and_household_learning(
             await db.execute(
                 select(IngredientAlias).where(
                     IngredientAlias.household_id == hh_a,
-                    IngredientAlias.normalized_alias == normalize_ingredient_text("Ghar Ka Special Masala X99"),
+                    IngredientAlias.normalized_alias
+                    == normalize_ingredient_text("Ghar Ka Special Masala X99"),
                 )
             )
         ).scalar_one_or_none()
         assert learned_before is None
 
         # Explicit user confirmation learns the alias for Household A ONLY
-        garam = (await db.execute(select(CanonicalIngredient).where(CanonicalIngredient.variant_id == "garam_masala__unspecified"))).scalar_one()
+        garam = (
+            await db.execute(
+                select(CanonicalIngredient).where(
+                    CanonicalIngredient.variant_id == "garam_masala__unspecified"
+                )
+            )
+        ).scalar_one()
         await confirm_ingredient_mapping(
             db,
             household_id=hh_a,
@@ -197,21 +238,30 @@ async def test_phase7_2_brand_dedup_idempotency_and_household_learning(
         await db.commit()
 
         aliases_a = (
-            await db.execute(
-                select(IngredientAlias).where(
-                    IngredientAlias.household_id == hh_a,
-                    IngredientAlias.normalized_alias == normalize_ingredient_text("Ghar Ka Special Masala X99"),
+            (
+                await db.execute(
+                    select(IngredientAlias).where(
+                        IngredientAlias.household_id == hh_a,
+                        IngredientAlias.normalized_alias
+                        == normalize_ingredient_text("Ghar Ka Special Masala X99"),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(aliases_a) == 1
         assert aliases_a[0].confirmation_count == 2
         assert aliases_a[0].target_variant_id == "garam_masala__unspecified"
 
         # Subsequent receipt in Household A reuses learned alias; Household B does NOT
         resolver = IngredientResolver()
-        reuse_a = await resolver.resolve_for_household(db, household_id=hh_a, receipt_text="Ghar Ka Special Masala X99")
-        reuse_b = await resolver.resolve_for_household(db, household_id=hh_b, receipt_text="Ghar Ka Special Masala X99")
+        reuse_a = await resolver.resolve_for_household(
+            db, household_id=hh_a, receipt_text="Ghar Ka Special Masala X99"
+        )
+        reuse_b = await resolver.resolve_for_household(
+            db, household_id=hh_b, receipt_text="Ghar Ka Special Masala X99"
+        )
         assert reuse_a.variant_id == "garam_masala__unspecified"
         assert reuse_a.match_source == "household_learned_alias"
         assert reuse_b.requires_review is True

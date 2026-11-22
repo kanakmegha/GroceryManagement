@@ -55,7 +55,9 @@ _PACKAGING_WORDS_RE = re.compile(
     r"\b(?:bb|pouch|carton|bottle|btl|pack|pkt|jar|tin|box|tetrapack|tetra\s*pack|refill|imported|fresh|organic|pure|premium|popular|royal)\b",
     re.IGNORECASE,
 )
-_RETURN_NOISE_RE = re.compile(r"\b(?:\d+\s*days?\s*retu[rnmu]{1,3}|non[\s-]*returnable|returnable)\b", re.I)
+_RETURN_NOISE_RE = re.compile(
+    r"\b(?:\d+\s*days?\s*retu[rnmu]{1,3}|non[\s-]*returnable|returnable)\b", re.I
+)
 _GROCERY_PACK_RE = re.compile(r"\b\d+(?:\.\d+)?\s*(?:kg|g|gm|gms|ml|l|ltr|oz|lb|pack|pkt)\b", re.I)
 
 
@@ -100,19 +102,121 @@ _ABBREV_MAP = {
     "tometo": "tomato",
 }
 
-_UNKNOWN_GROCERY_RULES: tuple[tuple[re.Pattern[str], str, str, Literal["g", "ml", "pcs"], FoodState, bool], ...] = (
-    (re.compile(r"\b(?:sunflower|mustard|groundnut|olive|coconut|sesame|refined|cooking|rice\s*bran|soyabean)\s+oil\b|\bghee\b|\bvanaspati\b", re.I), "cooking_essentials", "cooking_oil", "ml", "processed", False),
-    (re.compile(r"\b(?:milk|curd|dahi|paneer|butter|cheese|yogurt|lassi|chaas|buttermilk|cream)\b", re.I), "dairy", "milk_and_dairy", "ml", "fresh", False),
+_UNKNOWN_GROCERY_RULES: tuple[
+    tuple[re.Pattern[str], str, str, Literal["g", "ml", "pcs"], FoodState, bool], ...
+] = (
+    (
+        re.compile(
+            r"\b(?:sunflower|mustard|groundnut|olive|coconut|sesame|refined|cooking|rice\s*bran|soyabean)\s+oil\b|\bghee\b|\bvanaspati\b",
+            re.I,
+        ),
+        "cooking_essentials",
+        "cooking_oil",
+        "ml",
+        "processed",
+        False,
+    ),
+    (
+        re.compile(
+            r"\b(?:milk|curd|dahi|paneer|butter|cheese|yogurt|lassi|chaas|buttermilk|cream)\b", re.I
+        ),
+        "dairy",
+        "milk_and_dairy",
+        "ml",
+        "fresh",
+        False,
+    ),
     (re.compile(r"\beggs?\b", re.I), "dairy", "eggs", "pcs", "fresh", False),
-    (re.compile(r"\b(?:rice|basmati|sona\s*masoori|ponni|kolam|poha|quinoa|oats|millet|ragi|jowar|bajra)\b", re.I), "grain", "rice_and_grains", "g", "dried", False),
-    (re.compile(r"\b(?:atta|chakki|maida|suji|rava|besan|flour)\b", re.I), "grain", "flour", "g", "dried", False),
-    (re.compile(r"\b(?:dal|toor|moong|masoor|chana|urad|rajma|chole|lentils|pulses)\b", re.I), "pulses", "lentils_and_pulses", "g", "dried", False),
-    (re.compile(r"\b(?:tomato|potato|onion|peas|matar|palak|spinach|bhindi|okra|garlic|ginger|carrot|capsicum|cabbage|cauliflower|broccoli|cucumber|brinjal|beans)\b", re.I), "vegetable", "fresh_vegetables", "g", "fresh", False),
-    (re.compile(r"\b(?:apple|banana|mango|mosambi|orange|pomegranate|grapes|papaya|watermelon|lemon|lime|kiwi|berry|guava)\b", re.I), "fruit", "fresh_fruits", "g", "fresh", False),
-    (re.compile(r"\b(?:masala|turmeric|haldi|mirchi|jeera|cumin|dhania|cardamom|pepper|clove|cinnamon|spice|salt|sugar|jaggery|gud)\b", re.I), "spices", "spices_and_seasoning", "g", "dried", False),
-    (re.compile(r"\b(?:idli\s*mix|dosa\s*mix|noodles|maggi|pasta|vermicelli|ketchup|sauce|jam|honey|pickle|achaar|vinegar|peanut\s*butter)\b", re.I), "packaged_grocery", "pantry_staples", "g", "processed", False),
-    (re.compile(r"\b(?:biscuit|cookies|chips|namkeen|chocolate|truffles|bread|rusk|muesli|cornflakes|cereal)\b", re.I), "packaged_grocery", "snacks_and_bakery", "g", "processed", False),
-    (re.compile(r"\b(?:tea|chai|coffee|juice|coke|cola|soda|water|drink)\b", re.I), "beverage", "beverages", "ml", "processed", False),
+    (
+        re.compile(
+            r"\b(?:rice|basmati|sona\s*masoori|ponni|kolam|poha|quinoa|oats|millet|ragi|jowar|bajra)\b",
+            re.I,
+        ),
+        "grain",
+        "rice_and_grains",
+        "g",
+        "dried",
+        False,
+    ),
+    (
+        re.compile(r"\b(?:atta|chakki|maida|suji|rava|besan|flour)\b", re.I),
+        "grain",
+        "flour",
+        "g",
+        "dried",
+        False,
+    ),
+    (
+        re.compile(r"\b(?:dal|toor|moong|masoor|chana|urad|rajma|chole|lentils|pulses)\b", re.I),
+        "pulses",
+        "lentils_and_pulses",
+        "g",
+        "dried",
+        False,
+    ),
+    (
+        re.compile(
+            r"\b(?:tomato|potato|onion|peas|matar|palak|spinach|bhindi|okra|garlic|ginger|carrot|capsicum|cabbage|cauliflower|broccoli|cucumber|brinjal|beans)\b",
+            re.I,
+        ),
+        "vegetable",
+        "fresh_vegetables",
+        "g",
+        "fresh",
+        False,
+    ),
+    (
+        re.compile(
+            r"\b(?:apple|banana|mango|mosambi|orange|pomegranate|grapes|papaya|watermelon|lemon|lime|kiwi|berry|guava)\b",
+            re.I,
+        ),
+        "fruit",
+        "fresh_fruits",
+        "g",
+        "fresh",
+        False,
+    ),
+    (
+        re.compile(
+            r"\b(?:masala|turmeric|haldi|mirchi|jeera|cumin|dhania|cardamom|pepper|clove|cinnamon|spice|salt|sugar|jaggery|gud)\b",
+            re.I,
+        ),
+        "spices",
+        "spices_and_seasoning",
+        "g",
+        "dried",
+        False,
+    ),
+    (
+        re.compile(
+            r"\b(?:idli\s*mix|dosa\s*mix|noodles|maggi|pasta|vermicelli|ketchup|sauce|jam|honey|pickle|achaar|vinegar|peanut\s*butter)\b",
+            re.I,
+        ),
+        "packaged_grocery",
+        "pantry_staples",
+        "g",
+        "processed",
+        False,
+    ),
+    (
+        re.compile(
+            r"\b(?:biscuit|cookies|chips|namkeen|chocolate|truffles|bread|rusk|muesli|cornflakes|cereal)\b",
+            re.I,
+        ),
+        "packaged_grocery",
+        "snacks_and_bakery",
+        "g",
+        "processed",
+        False,
+    ),
+    (
+        re.compile(r"\b(?:tea|chai|coffee|juice|coke|cola|soda|water|drink)\b", re.I),
+        "beverage",
+        "beverages",
+        "ml",
+        "processed",
+        False,
+    ),
 )
 
 
@@ -121,7 +225,9 @@ def _expand_abbreviations(text: str) -> str:
     return " ".join(_ABBREV_MAP.get(t.lower(), t) for t in tokens)
 
 
-def _extract_pack_and_brand(original: str, product_match: re.Match[str] | None) -> tuple[str | None, str | None]:
+def _extract_pack_and_brand(
+    original: str, product_match: re.Match[str] | None
+) -> tuple[str | None, str | None]:
     pack_m = _GROCERY_PACK_RE.search(original)
     pack_size = pack_m.group(0).strip() if pack_m else None
     brand: str | None = None
@@ -258,7 +364,9 @@ def _apply_purchase_context(
                 needs_review=True,
                 review_reason="Restaurant item without grocery pack; excluded from pantry.",
             )
-        unknown_cls = _classify_unknown_grocery_product(original_description, normalized_name, receipt_category)
+        unknown_cls = _classify_unknown_grocery_product(
+            original_description, normalized_name, receipt_category
+        )
         if unknown_cls is not None:
             return unknown_cls
         return FoodClassificationResult(
@@ -287,7 +395,11 @@ def _apply_purchase_context(
     budget_treatment: BudgetTreatment = rec.budget_treatment
     food_state: FoodState = rec.food_state
 
-    if receipt_category == "restaurant" and not has_grocery_pack and rec.category != "packaged_grocery":
+    if (
+        receipt_category == "restaurant"
+        and not has_grocery_pack
+        and rec.category != "packaged_grocery"
+    ):
         is_prepared = True
         pantry_eligible = False
         budget_treatment = "outside_food_expenditure"
@@ -329,7 +441,9 @@ def _apply_purchase_context(
         classification_confidence=round(confidence, 3),
         matching_confidence=round(confidence, 3),
         matching_status="matched_existing" if pantry_eligible else "ambiguous",
-        eligibility_reason="MATCHED_EXISTING_PRODUCT" if pantry_eligible else ("NON_FOOD" if c_status == "non_food" else "PREPARED_MEAL"),
+        eligibility_reason="MATCHED_EXISTING_PRODUCT"
+        if pantry_eligible
+        else ("NON_FOOD" if c_status == "non_food" else "PREPARED_MEAL"),
         matching_method=method,
         source=rec.source_dataset,
         needs_review=needs_review,
@@ -338,7 +452,9 @@ def _apply_purchase_context(
 
 
 class FoodClassificationService:
-    """Layered food matcher: exact canonical -> exact alias -> normalized token -> fuzzy -> context."""
+    """Layered food matcher: exact canonical -> exact alias -> normalized token -> fuzzy ->
+    context.
+    """
 
     @staticmethod
     def classify_item(
@@ -370,7 +486,10 @@ class FoodClassificationService:
                         res.pantry_eligible = False
                         res.budget_treatment = "requires_user_review"
                         res.needs_review = True
-                        res.review_reason = "User alias conflicts with non-food product indicators; review required."
+                        res.review_reason = (
+                            "User alias conflicts with non-food product indicators; "
+                            "review required."
+                        )
                     return res
 
         # 0b. Explicit non-food household/personal-care detection (before food token matching)
@@ -424,7 +543,10 @@ class FoodClassificationService:
             for cand_tokens, rec in _INDEX.token_sets:
                 if cand_tokens.issubset(input_tokens):
                     score = len(cand_tokens) / max(len(input_tokens), 1)
-                    if len(cand_tokens) > (len(best_rec.canonical_name.split()) if best_rec else 0) or score > best_score:
+                    if (
+                        len(cand_tokens) > (len(best_rec.canonical_name.split()) if best_rec else 0)
+                        or score > best_score
+                    ):
                         best_score = score
                         best_rec = rec
             if best_rec is not None:
@@ -482,7 +604,9 @@ async def classify_with_household_db(
     merchant_name: str | None = None,
     use_llm_fallback: bool = True,
 ) -> FoodClassificationResult:
-    """Hybrid classification: household alias -> deterministic catalogue -> HF LLM for uncertain items."""
+    """Hybrid classification: household alias -> deterministic catalogue -> HF LLM for uncertain
+    items.
+    """
     norm = FoodNameNormalizer.normalize(raw_name)
     raw_lower = (raw_name or "").strip().lower()
     candidates = [c for c in {raw_lower, norm} if c]
@@ -529,16 +653,30 @@ async def classify_with_household_db(
                 canonical_food_id=str(item_obj.id),
                 category=item_obj.category,
                 secondary_category=item_obj.secondary_category,
-                food_state=item_obj.food_state if item_obj.food_state in {
-                    "raw", "dried", "fresh", "frozen", "processed", "cooked", "ready_to_eat", "unknown"
-                } else "unknown",
+                food_state=item_obj.food_state
+                if item_obj.food_state
+                in {
+                    "raw",
+                    "dried",
+                    "fresh",
+                    "frozen",
+                    "processed",
+                    "cooked",
+                    "ready_to_eat",
+                    "unknown",
+                }
+                else "unknown",
                 is_prepared_food=item_obj.is_prepared_food,
                 pantry_eligible=item_obj.pantry_eligible,
                 classification_status=cls_status,
                 budget_treatment=bt,
-                default_base_unit=item_obj.default_base_unit if item_obj.default_base_unit in {"g", "ml", "pcs"} else "pcs",
+                default_base_unit=item_obj.default_base_unit
+                if item_obj.default_base_unit in {"g", "ml", "pcs"}
+                else "pcs",
                 confidence=0.98,
-                matching_method="user_alias" if alias_obj.source == "user_correction" else "exact_alias",
+                matching_method="user_alias"
+                if alias_obj.source == "user_correction"
+                else "exact_alias",
                 source=alias_obj.source,
                 needs_review=False,
             )
@@ -614,7 +752,8 @@ async def classify_with_household_db(
             matching_method="hf_llm",
             source="hf_llm",
             needs_review=True,
-            review_reason=llm_res.explanation or "Uncertain product classification; please review before adding to pantry.",
+            review_reason=llm_res.explanation
+            or "Uncertain product classification; please review before adding to pantry.",
         )
 
     mapped_state: FoodState = "raw" if llm_res.food_state == "raw" else "processed"

@@ -20,8 +20,7 @@ def _make_row_boxes(
     h: float = 0.018,
 ) -> list[OcrTokenBox]:
     return [
-        OcrTokenBox(text=txt, x=x, y=y, w=0.08, h=h, page=page, confidence=0.95)
-        for x, txt in cols
+        OcrTokenBox(text=txt, x=x, y=y, w=0.08, h=h, page=page, confidence=0.95) for x, txt in cols
     ]
 
 
@@ -60,8 +59,16 @@ def test_fixture_b_dense_gst_table_with_goodwill_and_pii() -> None:
     boxes: list[OcrTokenBox] = []
     # Header + PII
     boxes.extend(_make_row_boxes(0.03, [(0.05, "Tax Invoice"), (0.55, "GSTIN: 29ABCDE1234F1Z5")]))
-    boxes.extend(_make_row_boxes(0.06, [(0.05, "Customer: customer.test@example.com"), (0.55, "Phone: +91 9876543210")]))
-    boxes.extend(_make_row_boxes(0.09, [(0.05, "Delivery Address: 42 MG Road, Indiranagar, Bengaluru 560038")]))
+    boxes.extend(
+        _make_row_boxes(
+            0.06, [(0.05, "Customer: customer.test@example.com"), (0.55, "Phone: +91 9876543210")]
+        )
+    )
+    boxes.extend(
+        _make_row_boxes(
+            0.09, [(0.05, "Delivery Address: 42 MG Road, Indiranagar, Bengaluru 560038")]
+        )
+    )
 
     # Table header (10 semantic columns)
     boxes.extend(
@@ -83,14 +90,102 @@ def test_fixture_b_dense_gst_table_with_goodwill_and_pii() -> None:
     )
 
     items = [
-        ("1", "04011000", "Amul Taaza Toned Milk 1L", "1", "72.00", "68.00", "68.00", "0.00", "0.00", "68.00"),
-        ("2", "10063020", "India Gate Basmati Rice 1kg", "1", "110.00", "90.00", "85.71", "2.14", "2.15", "90.00"),
-        ("3", "07134000", "Tata Sampann Toor Dal 500g", "1", "85.00", "70.00", "66.67", "1.66", "1.67", "70.00"),
-        ("4", "15091000", "Fortune Sunflower Oil 500ml", "1", "75.00", "65.00", "61.90", "1.55", "1.55", "65.00"),
-        ("5", "09024020", "Red Label Tea 100g", "1", "55.00", "45.00", "42.86", "1.07", "1.07", "45.00"),
-        ("6", "25010010", "Tata Salt Iodized 1kg", "1", "28.00", "22.00", "22.00", "0.00", "0.00", "22.00"),
-        ("7", "19053100", "Britannia Good Day 100g", "1", "15.00", "11.00", "9.32", "0.84", "0.84", "11.00"),
-        ("8", "21069099", "Maggi Masala Noodles 70g", "1", "12.00", "10.00", "8.48", "0.76", "0.76", "10.00"),
+        (
+            "1",
+            "04011000",
+            "Amul Taaza Toned Milk 1L",
+            "1",
+            "72.00",
+            "68.00",
+            "68.00",
+            "0.00",
+            "0.00",
+            "68.00",
+        ),
+        (
+            "2",
+            "10063020",
+            "India Gate Basmati Rice 1kg",
+            "1",
+            "110.00",
+            "90.00",
+            "85.71",
+            "2.14",
+            "2.15",
+            "90.00",
+        ),
+        (
+            "3",
+            "07134000",
+            "Tata Sampann Toor Dal 500g",
+            "1",
+            "85.00",
+            "70.00",
+            "66.67",
+            "1.66",
+            "1.67",
+            "70.00",
+        ),
+        (
+            "4",
+            "15091000",
+            "Fortune Sunflower Oil 500ml",
+            "1",
+            "75.00",
+            "65.00",
+            "61.90",
+            "1.55",
+            "1.55",
+            "65.00",
+        ),
+        (
+            "5",
+            "09024020",
+            "Red Label Tea 100g",
+            "1",
+            "55.00",
+            "45.00",
+            "42.86",
+            "1.07",
+            "1.07",
+            "45.00",
+        ),
+        (
+            "6",
+            "25010010",
+            "Tata Salt Iodized 1kg",
+            "1",
+            "28.00",
+            "22.00",
+            "22.00",
+            "0.00",
+            "0.00",
+            "22.00",
+        ),
+        (
+            "7",
+            "19053100",
+            "Britannia Good Day 100g",
+            "1",
+            "15.00",
+            "11.00",
+            "9.32",
+            "0.84",
+            "0.84",
+            "11.00",
+        ),
+        (
+            "8",
+            "21069099",
+            "Maggi Masala Noodles 70g",
+            "1",
+            "12.00",
+            "10.00",
+            "8.48",
+            "0.76",
+            "0.76",
+            "10.00",
+        ),
     ]
     y = 0.18
     for row in items:
@@ -301,17 +396,16 @@ async def test_multi_document_attach_and_no_inventory_mutation_before_confirm(
     client: AsyncClient,
     jwks_provider: EphemeralJWKSProvider,
 ) -> None:
-    """Attaching itemized invoice to a bill_summary draft merges items cleanly without mutating inventory."""
+    """Attaching itemized invoice to a bill_summary draft merges items cleanly without mutating
+    inventory.
+    """
     token = jwks_provider.make_token(sub="user_multi_doc", email="multi@example.com", name="Multi")
     auth_headers = {"Authorization": f"Bearer {token}"}
     me = await client.get("/api/v1/auth/me", headers=auth_headers)
     assert me.status_code == 200
     summary_text = (
-        "Swiggy Instamart\n"
-        "Order ID: ORD31485518163\n"
-        "Bill Summary\n"
-        "Grand Total ₹300.00\n"
-    ).encode("utf-8")
+        "Swiggy Instamart\nOrder ID: ORD31485518163\nBill Summary\nGrand Total ₹300.00\n"
+    ).encode()
 
     resp1 = await client.post(
         "/api/v1/purchases/ocr",
@@ -332,7 +426,7 @@ async def test_multi_document_attach_and_no_inventory_mutation_before_confirm(
         "Whole Wheat Bread 400g ₹55.00\n"
         "Fresh Paneer 200g ₹180.00\n"
         "Grand Total ₹300.00\n"
-    ).encode("utf-8")
+    ).encode()
 
     resp2 = await client.post(
         "/api/v1/purchases/ocr",

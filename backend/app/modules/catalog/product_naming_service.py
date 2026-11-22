@@ -64,10 +64,33 @@ _OCR_NAME_CORRECTIONS: dict[str, str] = {
     "urad dhuli": "Urad Dhuli",
 }
 _KNOWN_BRANDS = {
-    "amul", "aavin", "nandini", "mother", "heritage", "india", "gate",
-    "daawat", "fortune", "saffola", "dhara", "tata", "aashirvaad",
-    "everest", "mdh", "catch", "mtr", "eastern", "bb", "popular",
-    "dabur", "haldiram", "haldirams", "prabhat", "udhaiyam", "happy", "mail",
+    "amul",
+    "aavin",
+    "nandini",
+    "mother",
+    "heritage",
+    "india",
+    "gate",
+    "daawat",
+    "fortune",
+    "saffola",
+    "dhara",
+    "tata",
+    "aashirvaad",
+    "everest",
+    "mdh",
+    "catch",
+    "mtr",
+    "eastern",
+    "bb",
+    "popular",
+    "dabur",
+    "haldiram",
+    "haldirams",
+    "prabhat",
+    "udhaiyam",
+    "happy",
+    "mail",
     "get-a-way",
 }
 
@@ -107,7 +130,9 @@ def standardize_product_name(
     quantity: float | None = None,
     preserve_package_size: bool = False,
 ) -> ProductNamingResult:
-    """Produce clean canonical and display product names while preserving raw text, brand, and variant."""
+    """Produce clean canonical and display product names while preserving raw text, brand, and
+    variant.
+    """
     raw = raw_description or ""
     nfkc = unicodedata.normalize("NFKC", raw)
     visible = "".join(ch for ch in nfkc if unicodedata.category(ch) not in {"Cf", "Cc"}).strip()
@@ -148,7 +173,7 @@ def standardize_product_name(
     # Collapse empty parens, repeated punctuation & whitespace (preserve balanced parens!)
     cleaned = re.sub(r"\(\s*\)", " ", cleaned)
     cleaned = re.sub(r"\s*\|\s*", " ", cleaned)
-    cleaned = re.sub(r"[,\s]+", " ", cleaned).strip(" -,:.\t|*•°\"")
+    cleaned = re.sub(r"[,\s]+", " ", cleaned).strip(' -,:.\t|*•°"')
 
     # Strip leading single-letter OCR prefix before uppercase staple (e.g. 'S KHULAATTA')
     cleaned = re.sub(r"^[A-Za-z]\s+(?=[A-Z]{4,}\b)", "", cleaned).strip()

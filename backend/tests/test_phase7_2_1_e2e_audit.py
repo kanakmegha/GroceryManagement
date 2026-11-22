@@ -1,8 +1,8 @@
 """Phase 7.2.1 End-to-End Integration Audit tests (isolated temp DB, never touches dev_local.db)."""
 
+import uuid
 from datetime import date, timedelta
 from decimal import Decimal
-import uuid
 
 import pytest
 from httpx import AsyncClient
@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import build_async_engine, build_session_maker
 from app.infra.ocr.schemas import normalize_metric_unit
-from app.modules.catalog.ingredient_catalogue import get_ingredient_catalogue
 from app.modules.catalog.ingredient_catalogue_sync import sync_catalogue_to_db
 from app.modules.catalog.ingredient_mapping_service import (
     confirm_ingredient_mapping,
@@ -21,11 +20,7 @@ from app.modules.catalog.ingredient_resolver import IngredientResolver
 from app.modules.inventory.models import (
     CanonicalIngredient,
     CanonicalItem,
-    IngredientAlias,
-    InventoryLot,
-    StockLedger,
 )
-from app.modules.purchases.models import PurchaseItem
 from app.modules.recipes.grounding import classify_recommendation_type, reconcile_ingredient
 
 
@@ -84,7 +79,7 @@ async def test_phase7_2_1_e2e_synthetic_receipts_aggregation_and_idempotency(
     }
     me = await client.get("/api/v1/auth/me", headers=headers)
     assert me.status_code == 200
-    hh_id = uuid.UUID(me.json()["active_household"]["id"])
+    assert uuid.UUID(me.json()["active_household"]["id"])
 
     engine = build_async_engine(temp_db_url)
     sm = build_session_maker(engine)
@@ -109,11 +104,41 @@ async def test_phase7_2_1_e2e_synthetic_receipts_aggregation_and_idempotency(
             db,
             "BigBasket",
             [
-                {"raw_text": "Amul Gold Full Cream Milk 1 L", "display_name": "Amul Gold Full Cream Milk", "qty": "1000.000", "unit": "ml", "category": "dairy"},
-                {"raw_text": "Fresh Potato 2 KG", "display_name": "Fresh Potato", "qty": "2000.000", "unit": "g", "category": "produce"},
-                {"raw_text": "Aashirvaad Atta 5 KG", "display_name": "Aashirvaad Atta", "qty": "5000.000", "unit": "g", "category": "pantry"},
-                {"raw_text": "Mother Dairy Toned Milk 500 ML", "display_name": "Mother Dairy Toned Milk", "qty": "500.000", "unit": "ml", "category": "dairy"},
-                {"raw_text": "Cherry Tomato 250 G", "display_name": "Cherry Tomato", "qty": "250.000", "unit": "g", "category": "produce"},
+                {
+                    "raw_text": "Amul Gold Full Cream Milk 1 L",
+                    "display_name": "Amul Gold Full Cream Milk",
+                    "qty": "1000.000",
+                    "unit": "ml",
+                    "category": "dairy",
+                },
+                {
+                    "raw_text": "Fresh Potato 2 KG",
+                    "display_name": "Fresh Potato",
+                    "qty": "2000.000",
+                    "unit": "g",
+                    "category": "produce",
+                },
+                {
+                    "raw_text": "Aashirvaad Atta 5 KG",
+                    "display_name": "Aashirvaad Atta",
+                    "qty": "5000.000",
+                    "unit": "g",
+                    "category": "pantry",
+                },
+                {
+                    "raw_text": "Mother Dairy Toned Milk 500 ML",
+                    "display_name": "Mother Dairy Toned Milk",
+                    "qty": "500.000",
+                    "unit": "ml",
+                    "category": "dairy",
+                },
+                {
+                    "raw_text": "Cherry Tomato 250 G",
+                    "display_name": "Cherry Tomato",
+                    "qty": "250.000",
+                    "unit": "g",
+                    "category": "produce",
+                },
             ],
             idem_key="receipt-a-idem-1",
         )
@@ -133,10 +158,34 @@ async def test_phase7_2_1_e2e_synthetic_receipts_aggregation_and_idempotency(
             db,
             "Reliance Fresh",
             [
-                {"raw_text": "Another Brand Full Cream Milk 500 ML", "display_name": "Another Brand Full Cream Milk", "qty": "500.000", "unit": "ml", "category": "dairy"},
-                {"raw_text": "Aloo 1 KG", "display_name": "Aloo", "qty": "1000.000", "unit": "g", "category": "produce"},
-                {"raw_text": "Toned Milk 1 L", "display_name": "Toned Milk", "qty": "1000.000", "unit": "ml", "category": "dairy"},
-                {"raw_text": "Desi Tomato 500 G", "display_name": "Desi Tomato", "qty": "500.000", "unit": "g", "category": "produce"},
+                {
+                    "raw_text": "Another Brand Full Cream Milk 500 ML",
+                    "display_name": "Another Brand Full Cream Milk",
+                    "qty": "500.000",
+                    "unit": "ml",
+                    "category": "dairy",
+                },
+                {
+                    "raw_text": "Aloo 1 KG",
+                    "display_name": "Aloo",
+                    "qty": "1000.000",
+                    "unit": "g",
+                    "category": "produce",
+                },
+                {
+                    "raw_text": "Toned Milk 1 L",
+                    "display_name": "Toned Milk",
+                    "qty": "1000.000",
+                    "unit": "ml",
+                    "category": "dairy",
+                },
+                {
+                    "raw_text": "Desi Tomato 500 G",
+                    "display_name": "Desi Tomato",
+                    "qty": "500.000",
+                    "unit": "g",
+                    "category": "produce",
+                },
             ],
             idem_key="receipt-b-idem-1",
         )
@@ -189,9 +238,13 @@ async def test_phase7_2_1_e2e_synthetic_receipts_aggregation_and_idempotency(
             "base_unit": "g",
         },
     ]
-    r_milk = reconcile_ingredient({"name": "Milk", "required_qty": "500", "base_unit": "ml"}, pantry_payload)
+    r_milk = reconcile_ingredient(
+        {"name": "Milk", "required_qty": "500", "base_unit": "ml"}, pantry_payload
+    )
     assert r_milk is not None and r_milk["status"] == "available"
-    r_cherry = reconcile_ingredient({"name": "Cherry Tomato", "required_qty": "100", "base_unit": "g"}, pantry_payload)
+    r_cherry = reconcile_ingredient(
+        {"name": "Cherry Tomato", "required_qty": "100", "base_unit": "g"}, pantry_payload
+    )
     assert r_cherry is not None and r_cherry["status"] == "missing"
     assert classify_recommendation_type([r_milk], [], pantry_payload) == "COOK_NOW"
 
@@ -239,10 +292,16 @@ async def test_phase7_2_1_household_learning_conflict_and_isolation(
 ) -> None:
     sub_a = f"hh-a-{uuid.uuid4().hex[:8]}"
     sub_b = f"hh-b-{uuid.uuid4().hex[:8]}"
-    hdr_a = {"Authorization": f"Bearer {jwks_provider.make_token(sub=sub_a, email=f'{sub_a}@example.com')}"}
-    hdr_b = {"Authorization": f"Bearer {jwks_provider.make_token(sub=sub_b, email=f'{sub_b}@example.com')}"}
-    hh_a = uuid.UUID((await client.get("/api/v1/auth/me", headers=hdr_a)).json()["active_household"]["id"])
-    hh_b = uuid.UUID((await client.get("/api/v1/auth/me", headers=hdr_b)).json()["active_household"]["id"])
+    tok_a = jwks_provider.make_token(sub=sub_a, email=f"{sub_a}@example.com")
+    tok_b = jwks_provider.make_token(sub=sub_b, email=f"{sub_b}@example.com")
+    hdr_a = {"Authorization": f"Bearer {tok_a}"}
+    hdr_b = {"Authorization": f"Bearer {tok_b}"}
+    hh_a = uuid.UUID(
+        (await client.get("/api/v1/auth/me", headers=hdr_a)).json()["active_household"]["id"]
+    )
+    hh_b = uuid.UUID(
+        (await client.get("/api/v1/auth/me", headers=hdr_b)).json()["active_household"]["id"]
+    )
 
     engine = build_async_engine(temp_db_url)
     sm = build_session_maker(engine)
@@ -264,17 +323,36 @@ async def test_phase7_2_1_household_learning_conflict_and_isolation(
         assert res1.user_confirmed is False
 
         # 2. User confirms -> saved at household A scope
-        garam = (await db.execute(select(CanonicalIngredient).where(CanonicalIngredient.variant_id == "garam_masala__unspecified"))).scalar_one()
-        turmeric = (await db.execute(select(CanonicalIngredient).where(CanonicalIngredient.variant_id == "turmeric__unspecified"))).scalar_one()
+        garam = (
+            await db.execute(
+                select(CanonicalIngredient).where(
+                    CanonicalIngredient.variant_id == "garam_masala__unspecified"
+                )
+            )
+        ).scalar_one()
+        turmeric = (
+            await db.execute(
+                select(CanonicalIngredient).where(
+                    CanonicalIngredient.variant_id == "turmeric__unspecified"
+                )
+            )
+        ).scalar_one()
         await confirm_ingredient_mapping(
-            db, household_id=hh_a, canonical_item_id=unknown_item.id, canonical_ingredient_id=garam.id
+            db,
+            household_id=hh_a,
+            canonical_item_id=unknown_item.id,
+            canonical_ingredient_id=garam.id,
         )
         await db.commit()
 
         # 3. Next receipt in HH A resolves automatically; HH B does NOT inherit
         resolver = IngredientResolver()
-        next_a = await resolver.resolve_for_household(db, household_id=hh_a, receipt_text="Xyz Special House Masala")
-        next_b = await resolver.resolve_for_household(db, household_id=hh_b, receipt_text="Xyz Special House Masala")
+        next_a = await resolver.resolve_for_household(
+            db, household_id=hh_a, receipt_text="Xyz Special House Masala"
+        )
+        next_b = await resolver.resolve_for_household(
+            db, household_id=hh_b, receipt_text="Xyz Special House Masala"
+        )
         assert next_a.variant_id == "garam_masala__unspecified"
         assert next_a.match_source == "household_learned_alias"
         assert next_b.requires_review is True

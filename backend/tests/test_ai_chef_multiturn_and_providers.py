@@ -1,4 +1,6 @@
-"""Tests for multi-turn AI Chef, LLM provider adapters, safety invariants, and FEFO cooking completion."""
+"""Tests for multi-turn AI Chef, LLM provider adapters, safety invariants, and FEFO cooking
+completion.
+"""
 
 from __future__ import annotations
 
@@ -36,7 +38,12 @@ async def test_huggingface_only_provider_structured_json_timeout_and_outage_fall
                     "prep_minutes": 10,
                     "cook_minutes": 10,
                     "available_ingredients": [
-                        {"name": "Paneer", "quantity": "200 g", "status": "available", "needs_purchase": False}
+                        {
+                            "name": "Paneer",
+                            "quantity": "200 g",
+                            "status": "available",
+                            "needs_purchase": False,
+                        }
                     ],
                     "partial_ingredients": [],
                     "missing_ingredients": [],
@@ -49,7 +56,9 @@ async def test_huggingface_only_provider_structured_json_timeout_and_outage_fall
             ],
             "follow_up_questions": ["Would you like roti or rice with this?"],
         }
-        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(payload)}}]})
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": json.dumps(payload)}}]}
+        )
 
     hf = HuggingFaceRecipeProvider(hf_token=secret_hf, transport=httpx.MockTransport(hf_ok))
     res = await hf.generate_recipes(
@@ -61,7 +70,8 @@ async def test_huggingface_only_provider_structured_json_timeout_and_outage_fall
     assert res.recipes[0].meal_type == "dinner"
     assert res.follow_up_questions == ["Would you like roti or rice with this?"]
 
-    # Empty inventory safety invariant: even if HF returns available_ingredients, backend strips them to missing!
+    # Empty inventory safety invariant: even if HF returns available_ingredients, backend strips
+    # them to missing!
     def hf_hallucinated(_req: httpx.Request) -> httpx.Response:
         payload = {
             "recipes": [
@@ -69,7 +79,12 @@ async def test_huggingface_only_provider_structured_json_timeout_and_outage_fall
                     "title": "Dal Tadka",
                     "description": "Lentil curry.",
                     "available_ingredients": [
-                        {"name": "Toor Dal", "quantity": "200 g", "status": "available", "needs_purchase": False}
+                        {
+                            "name": "Toor Dal",
+                            "quantity": "200 g",
+                            "status": "available",
+                            "needs_purchase": False,
+                        }
                     ],
                     "missing_ingredients": [],
                     "steps": ["Cook dal."],
@@ -77,14 +92,19 @@ async def test_huggingface_only_provider_structured_json_timeout_and_outage_fall
             ],
             "follow_up_questions": [],
         }
-        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(payload)}}]})
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": json.dumps(payload)}}]}
+        )
 
-    hf_empty = HuggingFaceRecipeProvider(hf_token=secret_hf, transport=httpx.MockTransport(hf_hallucinated))
+    hf_empty = HuggingFaceRecipeProvider(
+        hf_token=secret_hf, transport=httpx.MockTransport(hf_hallucinated)
+    )
     empty_res = await hf_empty.generate_recipes("Cook dal", inventory_items=[])
     assert empty_res.recipes[0].available_ingredients == []
     assert len(empty_res.recipes[0].missing_ingredients) == 1
 
-    # Rate limit (429) and timeout fallback never crash, never switch to another LLM, and never leak HF_TOKEN
+    # Rate limit (429) and timeout fallback never crash, never switch to another LLM, and never
+    # leak HF_TOKEN
     def rate_limited(_req: httpx.Request) -> httpx.Response:
         return httpx.Response(429, text="rate limit exceeded")
 
@@ -161,7 +181,10 @@ async def test_multiturn_ai_chef_and_fefo_cooking_completion_workflow(
     )
     assert turn2.status_code == 200
     d2 = turn2.json()
-    assert any("Paneer" in s["title"] or "Paneer" in s.get("uses_expiring_items", []) for s in d2["suggestions"])
+    assert any(
+        "Paneer" in s["title"] or "Paneer" in s.get("uses_expiring_items", [])
+        for s in d2["suggestions"]
+    )
 
     # Generating recipes NEVER deducts inventory
     lots_before = (await client.get("/api/v1/inventory/lots", headers=headers)).json()["items"]
@@ -181,11 +204,16 @@ async def test_multiturn_ai_chef_and_fefo_cooking_completion_workflow(
             },
         )
     ).json()
-    assert (await client.post(f"/api/v1/cooking-plans/{plan_cancel['id']}/cancel", headers=headers)).status_code == 200
-    lots_after_cancel = (await client.get("/api/v1/inventory/lots", headers=headers)).json()["items"]
+    assert (
+        await client.post(f"/api/v1/cooking-plans/{plan_cancel['id']}/cancel", headers=headers)
+    ).status_code == 200
+    lots_after_cancel = (await client.get("/api/v1/inventory/lots", headers=headers)).json()[
+        "items"
+    ]
     assert float(lots_after_cancel[0]["remaining_qty"]) == 400.0
 
-    # Explicit completion deducts actual quantity (150g) via FEFO and does NOT create outside-food expenditure
+    # Explicit completion deducts actual quantity (150g) via FEFO and does NOT create outside-food
+    # expenditure
     plan_done = (
         await client.post(
             "/api/v1/cooking-plans",
@@ -251,20 +279,31 @@ async def test_controlled_readonly_tool_loop_validation_and_bounds() -> None:
 
         async def _get_pantry_items(self, *, category=None):
             self.calls.append("get_pantry_items")
-            return {"items": [{"name": "Spinach", "qty": 200, "base_unit": "g", "expiring_soon": True}]}
+            return {
+                "items": [{"name": "Spinach", "qty": 200, "base_unit": "g", "expiring_soon": True}]
+            }
 
         async def _get_expiring_items(self, *, days_ahead=3):
             self.calls.append(f"get_expiring_items:{days_ahead}")
-            return {"days_ahead": days_ahead, "items": [{"name": "Spinach", "qty": 200, "base_unit": "g"}]}
+            return {
+                "days_ahead": days_ahead,
+                "items": [{"name": "Spinach", "qty": 200, "base_unit": "g"}],
+            }
 
         async def _get_recent_cooking_history(self, *, limit=8):
             self.calls.append("get_recent_cooking_history")
             return {"recent_recipes": []}
 
     toolset = _DummyToolset()
-    assert await toolset.execute_tool("delete_inventory_lot", {}) == {"error": "unknown_or_disallowed_tool"}
-    assert await toolset.execute_tool("get_expiring_items", {"days_ahead": 999}) == {"error": "invalid_tool_arguments"}
-    assert await toolset.execute_tool("get_available_equipment", {"unexpected": 1}) == {"error": "invalid_tool_arguments"}
+    assert await toolset.execute_tool("delete_inventory_lot", {}) == {
+        "error": "unknown_or_disallowed_tool"
+    }
+    assert await toolset.execute_tool("get_expiring_items", {"days_ahead": 999}) == {
+        "error": "invalid_tool_arguments"
+    }
+    assert await toolset.execute_tool("get_available_equipment", {"unexpected": 1}) == {
+        "error": "invalid_tool_arguments"
+    }
     assert await toolset.execute_tool("get_available_equipment", {}) == {"equipment": ["air_fryer"]}
 
     round_counter = {"n": 0}
@@ -284,7 +323,10 @@ async def test_controlled_readonly_tool_loop_validation_and_bounds() -> None:
                                     {
                                         "id": "call_1",
                                         "type": "function",
-                                        "function": {"name": "get_expiring_items", "arguments": '{"days_ahead": 2}'},
+                                        "function": {
+                                            "name": "get_expiring_items",
+                                            "arguments": '{"days_ahead": 2}',
+                                        },
                                     }
                                 ],
                             }
@@ -300,17 +342,35 @@ async def test_controlled_readonly_tool_loop_validation_and_bounds() -> None:
                     "description": "Fast iron-rich spinach and lentils.",
                     "servings": 2,
                     "prep_minutes": 15,
-                    "available_ingredients": [{"name": "Spinach", "quantity": "200 g", "status": "available", "needs_purchase": False}],
-                    "missing_ingredients": [{"name": "Toor Dal", "quantity": "150 g", "status": "missing", "needs_purchase": True}],
+                    "available_ingredients": [
+                        {
+                            "name": "Spinach",
+                            "quantity": "200 g",
+                            "status": "available",
+                            "needs_purchase": False,
+                        }
+                    ],
+                    "missing_ingredients": [
+                        {
+                            "name": "Toor Dal",
+                            "quantity": "150 g",
+                            "status": "missing",
+                            "needs_purchase": True,
+                        }
+                    ],
                     "steps": ["Simmer dal and fold in spinach."],
                     "uses_expiring_items": ["Spinach"],
                 }
             ],
             "follow_up_questions": [],
         }
-        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(final_payload)}}]})
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": json.dumps(final_payload)}}]}
+        )
 
-    hf = HuggingFaceRecipeProvider(hf_token="hf_test_tool_token", transport=httpx.MockTransport(tool_then_json))
+    hf = HuggingFaceRecipeProvider(
+        hf_token="hf_test_tool_token", transport=httpx.MockTransport(tool_then_json)
+    )
     res = await hf.generate_recipes(
         "What can I make before my spinach expires?",
         inventory_items=[{"name": "Spinach", "qty": 200, "base_unit": "g", "expiring_soon": True}],

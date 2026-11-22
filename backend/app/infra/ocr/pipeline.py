@@ -11,7 +11,6 @@ Stages:
 from __future__ import annotations
 
 import asyncio
-import shutil
 import time
 from pathlib import Path
 from typing import Any
@@ -76,6 +75,7 @@ def _vlm_dict_to_receipt(
     initial_warnings: list[str],
 ) -> ExtractedReceipt:
     """Convert structured VLM JSON output into ExtractedReceipt without mutating values."""
+
     def _to_paise(val: Any, *, signed: bool = False) -> int | None:
         if val is None or val == "":
             return None
@@ -131,7 +131,9 @@ def _vlm_dict_to_receipt(
         adapter_used="hf_qwen2_5_vl",
         merchant_name=vlm_data.get("merchant_name"),
         receipt_number=vlm_data.get("receipt_number"),
-        receipt_date=parsed_date.isoformat() if parsed_date else (str(raw_date) if raw_date else None),
+        receipt_date=parsed_date.isoformat()
+        if parsed_date
+        else (str(raw_date) if raw_date else None),
         currency=str(vlm_data.get("currency") or "INR"),
         lines=lines,
         subtotal_paise=_to_paise(vlm_data.get("subtotal")),
@@ -163,14 +165,17 @@ def _run_local_ocr_on_images_sync(
 
     if provider is None:
         warnings.append(
-            "OCR_PROVIDER_UNAVAILABLE: No local OCR engine (ocrmac or tesseract) is available; returning draft for manual review."
+            "OCR_PROVIDER_UNAVAILABLE: No local OCR engine (ocrmac or tesseract) is "
+            "available; returning draft for manual review."
         )
 
     for idx, img_bytes in enumerate(image_bytes_list):
         try:
             prep = preprocess_receipt_image(img_bytes)
         except Exception as exc:
-            warnings.append(f"Image preprocessing failed ({type(exc).__name__}); manual review needed.")
+            warnings.append(
+                f"Image preprocessing failed ({type(exc).__name__}); manual review needed."
+            )
             continue
 
         if idx == 0:
@@ -193,7 +198,11 @@ def _run_local_ocr_on_images_sync(
         if ocr_out.raw_text:
             raw_texts.append(ocr_out.raw_text)
 
-    if is_pdf_pages and not all_boxes and not any("tesseract" in w or "ocrmac" in w or "blurry" in w.lower() for w in warnings):
+    if (
+        is_pdf_pages
+        and not all_boxes
+        and not any("tesseract" in w or "ocrmac" in w or "blurry" in w.lower() for w in warnings)
+    ):
         warnings.append("PDF contained no extractable text; manual review required.")
 
     return (
@@ -236,7 +245,9 @@ async def extract_receipt(
             latency_ms=int((time.perf_counter() - started) * 1000),
             confidence=0.0,
             needs_review=True,
-            warnings=[f"Uploaded file exceeds maximum size of {MAX_RECEIPT_BYTES // (1024 * 1024)} MB."],
+            warnings=[
+                f"Uploaded file exceeds maximum size of {MAX_RECEIPT_BYTES // (1024 * 1024)} MB."
+            ],
         )
 
     # 1. Plain text transcripts
@@ -299,7 +310,8 @@ async def extract_receipt(
             adapter_used="pymupdf_error",
             confidence=0.0,
             needs_review=True,
-            warnings=pdf_res.warnings or ["PDF contained no extractable content; manual review required."],
+            warnings=pdf_res.warnings
+            or ["PDF contained no extractable content; manual review required."],
             latency_ms=int((time.perf_counter() - started) * 1000),
         )
         return receipt

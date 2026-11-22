@@ -258,7 +258,8 @@ async def test_phase5_replenishment_filtering_and_pantry_mapping_review(
         )
         await db.flush()
 
-        # Consumption history + 5 consistent purchases (3 days apart) on hist_milk -> HIGH confidence consumption_based
+        # Consumption history + 5 consistent purchases (3 days apart) on hist_milk -> HIGH
+        # confidence consumption_based
         for days_ago in (18, 15, 12, 9, 6):
             p_m = Purchase(
                 household_id=hh_id,
@@ -361,7 +362,8 @@ async def test_phase5_replenishment_filtering_and_pantry_mapping_review(
     actionable_by_id = {x["canonical_item_id"]: x for x in actionable}
     needs_more_by_id = {x["canonical_item_id"]: x for x in rec_data["needs_more_data"]}
 
-    # 1, 2, 5, 6: Insufficient data, OOS with no history, unknown unit, incompatible unit -> suppressed
+    # 1, 2, 5, 6: Insufficient data, OOS with no history, unknown unit, incompatible unit ->
+    # suppressed
     assert ids["insuff"] not in actionable_by_id
     assert ids["oos"] not in actionable_by_id
     assert ids["unk"] not in actionable_by_id
@@ -381,7 +383,8 @@ async def test_phase5_replenishment_filtering_and_pantry_mapping_review(
     assert ids["milk"] in actionable_by_id
     assert actionable_by_id[ids["milk"]]["evidence_basis"] == "consumption_based"
 
-    # 4: User-defined minimum stock target without HIGH confidence -> suppressed under Phase 5B.1 strict evidence rules
+    # 4: User-defined minimum stock target without HIGH confidence -> suppressed under Phase 5B.1
+    # strict evidence rules
     assert ids["target"] not in actionable_by_id
     assert ids["target"] in needs_more_by_id
     assert needs_more_by_id[ids["target"]]["eligibility_status"] == "SUPPRESSED"
@@ -391,12 +394,14 @@ async def test_phase5_replenishment_filtering_and_pantry_mapping_review(
     assert ing_res.status_code == 200
     ing_data = ing_res.json()
 
-    # 7 & 8: Confirmed Milk mapping aggregates 400 + 1500 = 1900 ml; unmapped product doesn't break pantry
+    # 7 & 8: Confirmed Milk mapping aggregates 400 + 1500 = 1900 ml; unmapped product doesn't
+    # break pantry
     assert len(ing_data["ingredients"]) == 1
     assert ing_data["ingredients"][0]["name"] == "Milk"
     assert Decimal(ing_data["ingredients"][0]["total_remaining_qty"]) == Decimal("1900.000")
 
-    # 9: Mapping review includes ONLY grocery suggestion (target_dal), excluding non-food & LOW unmapped
+    # 9: Mapping review includes ONLY grocery suggestion (target_dal), excluding non-food & LOW
+    # unmapped
     review_ids = [x["canonical_item_id"] for x in ing_data["mapping_review_items"]]
     assert review_ids == [ids["target"]]
     assert ids["nonfood"] not in review_ids

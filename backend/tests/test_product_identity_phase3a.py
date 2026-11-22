@@ -89,7 +89,8 @@ async def test_product_identity_resolution_rules_and_isolation(temp_db_url: str)
         assert r_abbr.outcome == "match_existing"
         assert r_abbr.resolved_canonical_item_id == turmeric.id
 
-        # 3. Different package size ("Amul Full Cream Milk 1L" vs "500ml") -> review_required, NOT auto-merged
+        # 3. Different package size ("Amul Full Cream Milk 1L" vs "500ml") -> review_required, NOT
+        # auto-merged
         r_pack = await resolve_product_identity(
             db, household_id=hh1.id, raw_description="Amul Full Cream Milk 1L", base_unit="ml"
         )
@@ -102,7 +103,8 @@ async def test_product_identity_resolution_rules_and_isolation(temp_db_url: str)
         )
         assert r_brand.outcome == "create_new"
 
-        # 5. Different cooking variant ("Amul Toned Milk 500ml" vs "Full Cream"; "Idli Rice" vs "Basmati")
+        # 5. Different cooking variant ("Amul Toned Milk 500ml" vs "Full Cream"; "Idli Rice" vs
+        # "Basmati")
         r_var_milk = await resolve_product_identity(
             db, household_id=hh1.id, raw_description="Amul Toned Milk 500ml", base_unit="ml"
         )
@@ -185,7 +187,8 @@ async def test_receipt_confirmation_reuses_product_and_preserves_provenance(
     assert c1.status_code == 200
     ci_id_1 = c1.json()["created_lots"][0]["canonical_item_id"]
 
-    # Purchase 2: Punctuation + leading line-number OCR variant '" Turmeric Powder.' -> resolves to SAME CanonicalItem ID!
+    # Purchase 2: Punctuation + leading line-number OCR variant '" Turmeric Powder.' -> resolves
+    # to SAME CanonicalItem ID!
     p2 = await client.post(
         "/api/v1/purchases",
         headers=headers,
@@ -224,7 +227,11 @@ async def test_receipt_confirmation_reuses_product_and_preserves_provenance(
         pis = (await db.execute(select(PurchaseItem))).scalars().all()
         second_pi = [pi for pi in pis if pi.display_name == '" Turmeric Powder.'][0]
         assert second_pi.raw_text == '" Turmeric Powder. 1 KG 68 68.00'
-        assert second_pi.resolution_method in {"approved_alias", "normalized_match", "user_selected"}
+        assert second_pi.resolution_method in {
+            "approved_alias",
+            "normalized_match",
+            "user_selected",
+        }
         assert second_pi.resolution_status in {"auto_matched", "user_confirmed"}
         assert second_pi.resolution_score is not None
     await engine.dispose()

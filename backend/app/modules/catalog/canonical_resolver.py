@@ -39,7 +39,8 @@ def clean_canonical_candidate_name(
     text = _SECTION_BLEED_RE.sub("", text).strip()
     text = _SUMMARY_BLEED_RE.sub("", text).strip()
 
-    # Preserve known grade-prefixed staples like '40 Chawal' (strip only leading serial before '40 Chawal')
+    # Preserve known grade-prefixed staples like '40 Chawal' (strip only leading serial before '40
+    # Chawal')
     grade_m = re.match(r"^(?:\d{1,2}\s+)?(40\s+chawal)\b", text, re.IGNORECASE)
     if grade_m:
         return "40 Chawal"
@@ -49,16 +50,19 @@ def clean_canonical_candidate_name(
     while prev != text:
         prev = text
         text = _LEADING_SERIAL_BULLET_RE.sub("", text).strip()
-        # Strip leading single/2-digit serial before a single capitalized/uppercase word (e.g. '6 Moong', '10 CHOLE')
+        # Strip leading single/2-digit serial before a single capitalized/uppercase word (e.g. '6
+        # Moong', '10 CHOLE')
         text = re.sub(r"^(?:[1-9]|[12]\d)\s+(?=[A-Za-z]{3,}\b)", "", text).strip()
 
-    # Strip leading 3+ digit rate prefix when followed by alphabetic product words (e.g. '120 Chana Dal', '130 Chana Dal')
+    # Strip leading 3+ digit rate prefix when followed by alphabetic product words (e.g. '120
+    # Chana Dal', '130 Chana Dal')
     text = re.sub(r"^\d{3,5}\s+(?=[A-Za-z]{2,})", "", text).strip()
 
     # Strip trailing '<unit> <rate>' (e.g. 'Moong Dhuli KG 120', 'LALMALKA KG 94')
     text = _TRAILING_UNIT_RATE_RE.sub("", text).strip()
 
-    # Strip trailing standalone numbers that match known receipt rate/total/qty or >=3-digit rate/noise suffixes
+    # Strip trailing standalone numbers that match known receipt rate/total/qty or >=3-digit
+    # rate/noise suffixes
     price_ints: set[int] = set()
     if unit_price_paise is not None and unit_price_paise > 0:
         price_ints.add(round(unit_price_paise / 100))
@@ -76,11 +80,11 @@ def clean_canonical_candidate_name(
                 break
             num_int = round(num_val)
             is_known_price = num_int in price_ints
-            is_known_qty = qty_int is not None and abs(num_val - quantity) < 1e-3 and num_int == qty_int
+            is_known_qty = (
+                qty_int is not None and abs(num_val - quantity) < 1e-3 and num_int == qty_int
+            )
             is_rate_or_noise_tail = (
-                num_val >= 100
-                or "." in last
-                or (len(tokens) >= 3 and num_val >= 10)
+                num_val >= 100 or "." in last or (len(tokens) >= 3 and num_val >= 10)
             )
             if is_known_price or is_known_qty or is_rate_or_noise_tail:
                 tokens.pop()
@@ -88,5 +92,5 @@ def clean_canonical_candidate_name(
         break
 
     cleaned = " ".join(tokens)
-    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip(" -,:.\t|*•°\"")
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip(' -,:.\t|*•°"')
     return cleaned

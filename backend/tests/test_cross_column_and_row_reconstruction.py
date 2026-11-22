@@ -14,12 +14,15 @@ from app.infra.ocr.validation import validate_extracted_receipt
 from tests.conftest import EphemeralJWKSProvider
 
 
-def _b(text: str, x: float, y: float, w: float = 0.06, h: float = 0.014, page: int = 1) -> OcrTokenBox:
+def _b(
+    text: str, x: float, y: float, w: float = 0.06, h: float = 0.014, page: int = 1
+) -> OcrTokenBox:
     return OcrTokenBox(text=text, x=x, y=y, w=w, h=h, page=page, confidence=0.94)
 
 
 def test_dense_14col_gst_invoice_3row_header_no_cross_column_contamination() -> None:
-    """14-column GST invoice with 3-row header ('Unit Price*', 'Unit Taxable Value*', 'CGST Rate(%) Amount')
+    """14-column GST invoice with 3-row header
+    ('Unit Price*', 'Unit Taxable Value*', 'CGST Rate(%) Amount')
     and wrapped descriptions above/below anchors must map every column cleanly without bleeding."""
     boxes: list[OcrTokenBox] = [
         # 3-row multi-column header
@@ -144,7 +147,8 @@ def test_dense_14col_gst_invoice_3row_header_no_cross_column_contamination() -> 
 
 def test_vertically_centered_multiline_descriptions_and_mrp_vs_rate_vs_total() -> None:
     """3-row header with 'Unit MRP/RSP', 'Product Rate', 'Taxable Amt.', 'Total Amt.' and
-    vertically-centered multi-line product cards must not bleed across rows or set merchant='Amt.'."""
+    vertically-centered multi-line product cards must not bleed across rows or set
+    merchant='Amt.'."""
     boxes: list[OcrTokenBox] = [
         _b("Seller Name: Fresh Supply Co", 0.04, 0.04, w=0.25),
         # 3-row header
@@ -248,7 +252,9 @@ def test_vertically_centered_multiline_descriptions_and_mrp_vs_rate_vs_total() -
 
 
 def test_missing_cells_do_not_shift_subsequent_values() -> None:
-    """Missing HSN or missing Discount cell in a row must not shift subsequent column values left."""
+    """Missing HSN or missing Discount cell in a row must not shift subsequent column values
+    left.
+    """
     boxes = [
         _b("Item", 0.05, 0.10, w=0.10),
         _b("HSN", 0.28, 0.10, w=0.06),
@@ -294,7 +300,9 @@ async def test_api_purchase_draft_contains_clean_names_and_correct_financials(
     jwks_provider: EphemeralJWKSProvider,
 ) -> None:
     """API PurchaseOut draft response preserves clean display_name without raw OCR numeric dumps."""
-    token = jwks_provider.make_token(sub="user_clean_draft", email="clean@example.com", name="Clean")
+    token = jwks_provider.make_token(
+        sub="user_clean_draft", email="clean@example.com", name="Clean"
+    )
     headers = {"Authorization": f"Bearer {token}"}
     assert (await client.get("/api/v1/auth/me", headers=headers)).status_code == 200
 
@@ -339,8 +347,9 @@ async def test_api_purchase_draft_contains_clean_names_and_correct_financials(
 
 
 def test_cropped_table_merchant_uncertainty_payment_isolation_and_decimal_anomaly() -> None:
-    """Cropped invoice table without seller header leaves merchant_name=None, isolates PAY lines from SGST,
-    strips OCR return-policy typos ('7 Days Retum'), and surfaces DECIMAL_ANOMALY in receipt.warnings."""
+    """Cropped invoice table without seller header leaves merchant_name=None,
+    isolates PAY lines from SGST, strips OCR return-policy typos ('7 Days Retum'),
+    and surfaces DECIMAL_ANOMALY in receipt.warnings."""
     boxes = [
         _b("SI", 0.02, 0.04, w=0.03),
         _b("Item Description", 0.07, 0.04, w=0.12),

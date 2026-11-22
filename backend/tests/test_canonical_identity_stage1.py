@@ -100,12 +100,17 @@ async def test_confirm_deduplicates_rate_contaminated_names_and_preserves_raw_te
         )
     ).status_code == 200
 
-    # Summary should aggregate all 3 Chana Dal lots into ONE Chana Dal entry (3000 g) and keep Chana Kala separate (1000 g)
+    # Summary should aggregate all 3 Chana Dal lots into ONE Chana Dal entry (3000 g) and keep
+    # Chana Kala separate (1000 g)
     summary_resp = await client.get("/api/v1/inventory/summary", headers=headers)
     assert summary_resp.status_code == 200
     items = summary_resp.json()["items"]
     chana_dal_entries = [it for it in items if "chana dal" in it["name"].lower()]
-    chana_kala_entries = [it for it in items if "black chickpeas" in it["name"].lower() or "chana kala" in it["name"].lower()]
+    chana_kala_entries = [
+        it
+        for it in items
+        if "black chickpeas" in it["name"].lower() or "chana kala" in it["name"].lower()
+    ]
     assert len(chana_dal_entries) == 1
     assert float(chana_dal_entries[0]["total_remaining_qty"]) == 3000.0
     assert chana_dal_entries[0]["active_lot_count"] == 3
@@ -118,7 +123,9 @@ async def test_dry_run_duplicate_audit_is_readonly_and_detects_clusters(
     client: AsyncClient,
     jwks_provider: EphemeralJWKSProvider,
 ) -> None:
-    token = jwks_provider.make_token(sub="stage1_user_2", email="s2@example.com", name="Stage1Audit")
+    token = jwks_provider.make_token(
+        sub="stage1_user_2", email="s2@example.com", name="Stage1Audit"
+    )
     headers = {"Authorization": f"Bearer {token}"}
     me_resp = await client.get("/api/v1/auth/me", headers=headers)
     assert me_resp.status_code == 200

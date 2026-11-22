@@ -62,7 +62,9 @@ async def _validate_merge_inputs(
     duplicate_ids: list[UUID],
 ) -> tuple[CanonicalItem, list[CanonicalItem]]:
     if not duplicate_ids:
-        raise AppError(status_code=422, code="VALIDATION_ERROR", message="duplicate_ids cannot be empty.")
+        raise AppError(
+            status_code=422, code="VALIDATION_ERROR", message="duplicate_ids cannot be empty."
+        )
     if survivor_id in duplicate_ids:
         raise AppError(
             status_code=422,
@@ -72,7 +74,9 @@ async def _validate_merge_inputs(
 
     survivor = await db.get(CanonicalItem, survivor_id)
     if survivor is None:
-        raise AppError(status_code=404, code="NOT_FOUND", message="Survivor CanonicalItem not found.")
+        raise AppError(
+            status_code=404, code="NOT_FOUND", message="Survivor CanonicalItem not found."
+        )
     if survivor.household_id != household_id:
         raise AppError(
             status_code=403,
@@ -90,7 +94,9 @@ async def _validate_merge_inputs(
     for dup_id in duplicate_ids:
         dup = await db.get(CanonicalItem, dup_id)
         if dup is None:
-            raise AppError(status_code=404, code="NOT_FOUND", message=f"Duplicate {dup_id} not found.")
+            raise AppError(
+                status_code=404, code="NOT_FOUND", message=f"Duplicate {dup_id} not found."
+            )
         if dup.household_id != household_id:
             raise AppError(
                 status_code=403,
@@ -107,7 +113,9 @@ async def _validate_merge_inputs(
             raise AppError(
                 status_code=409,
                 code="UNIT_MISMATCH",
-                message=f"Incompatible units: {dup.default_base_unit} vs {survivor.default_base_unit}.",
+                message=(
+                    f"Incompatible units: {dup.default_base_unit} vs {survivor.default_base_unit}."
+                ),
             )
         duplicates.append(dup)
 
@@ -226,7 +234,8 @@ async def dry_run_product_merge(
             seen_ing = dm.canonical_ingredient_id
         elif dm.canonical_ingredient_id != seen_ing:
             conflicts.append(
-                f"CanonicalItem {dm.canonical_item_id} maps to {dm.canonical_ingredient_id} != {seen_ing}"
+                f"CanonicalItem {dm.canonical_item_id} maps to "
+                f"{dm.canonical_ingredient_id} != {seen_ing}"
             )
 
     return ProductMergeDryRunReport(
@@ -439,7 +448,9 @@ async def rollback_canonical_product_merge(
 
     dup = await db.get(CanonicalItem, log.duplicate_canonical_id)
     if dup is None:
-        raise AppError(status_code=404, code="NOT_FOUND", message="Duplicate CanonicalItem not found.")
+        raise AppError(
+            status_code=404, code="NOT_FOUND", message="Duplicate CanonicalItem not found."
+        )
 
     ev = log.evidence_json or {}
     for pi_id_str in ev.get("reassigned_purchase_item_ids", []):

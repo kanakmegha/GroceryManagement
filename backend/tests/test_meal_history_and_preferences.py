@@ -19,7 +19,8 @@ async def test_meal_history_lifecycle_feedback_preferences_and_isolation(
     1. Suggestions, planning, and cancellation do NOT create meal history.
     2. Explicit cooking completion creates meal history with actual quantities & FEFO deduction.
     3. Feedback is optional at completion, persisted, and editable later.
-    4. Repeated meal feedback builds household preference profile without over-inferring from 1 rating.
+    4. Repeated meal feedback builds household preference profile without over-inferring
+       from 1 rating.
     5. Household A cannot access Household B's meal history or feedback.
     """
     tok_a = jwks_provider.make_token(sub="user_meal_a", email="meala@example.com", name="Meal A")
@@ -38,7 +39,12 @@ async def test_meal_history_lifecycle_feedback_preferences_and_isolation(
     lot_resp = await client.post(
         "/api/v1/inventory/lots",
         headers=headers_a,
-        json={"canonical_item_id": cat_paneer["id"], "remaining_qty": 600, "base_unit": "g", "expires_on": soon},
+        json={
+            "canonical_item_id": cat_paneer["id"],
+            "remaining_qty": 600,
+            "base_unit": "g",
+            "expires_on": soon,
+        },
     )
     assert lot_resp.status_code == 201
 
@@ -61,12 +67,21 @@ async def test_meal_history_lifecycle_feedback_preferences_and_isolation(
                 "planned_servings": 2,
                 "meal_type": "dinner",
                 "cuisine": "Indian",
-                "ingredients": [{"canonical_item_id": cat_paneer["id"], "name": "Paneer", "planned_qty": 200, "base_unit": "g"}],
+                "ingredients": [
+                    {
+                        "canonical_item_id": cat_paneer["id"],
+                        "name": "Paneer",
+                        "planned_qty": 200,
+                        "base_unit": "g",
+                    }
+                ],
             },
         )
     ).json()
     assert (await client.get("/api/v1/meals/history", headers=headers_a)).json()["total"] == 0
-    assert (await client.post(f"/api/v1/cooking-plans/{plan_cancel['id']}/cancel", headers=headers_a)).status_code == 200
+    assert (
+        await client.post(f"/api/v1/cooking-plans/{plan_cancel['id']}/cancel", headers=headers_a)
+    ).status_code == 200
     assert (await client.get("/api/v1/meals/history", headers=headers_a)).json()["total"] == 0
 
     # 3. Complete 2 cooking sessions -> creates 2 meal history records & FEFO deducts
@@ -83,7 +98,14 @@ async def test_meal_history_lifecycle_feedback_preferences_and_isolation(
                     "prep_minutes": 15,
                     "cook_minutes": 15,
                     "steps": ["Sear paneer", "Simmer with spinach puree"],
-                    "ingredients": [{"canonical_item_id": cat_paneer["id"], "name": "Paneer", "planned_qty": 200, "base_unit": "g"}],
+                    "ingredients": [
+                        {
+                            "canonical_item_id": cat_paneer["id"],
+                            "name": "Paneer",
+                            "planned_qty": 200,
+                            "base_unit": "g",
+                        }
+                    ],
                 },
             )
         ).json()
@@ -91,7 +113,9 @@ async def test_meal_history_lifecycle_feedback_preferences_and_isolation(
             f"/api/v1/cooking-plans/{plan['id']}/complete",
             headers=headers_a,
             json={
-                "items": [{"canonical_item_id": cat_paneer["id"], "actual_used_qty": 150, "waste_qty": 0}],
+                "items": [
+                    {"canonical_item_id": cat_paneer["id"], "actual_used_qty": 150, "waste_qty": 0}
+                ],
                 "substitutions": ["Used low-fat paneer"] if idx == 1 else [],
             },
         )
@@ -130,7 +154,9 @@ async def test_meal_history_lifecycle_feedback_preferences_and_isolation(
     assert fb2.status_code == 200
 
     # Filters work
-    filtered = (await client.get("/api/v1/meals/history?meal_type=dinner&min_rating=5", headers=headers_a)).json()
+    filtered = (
+        await client.get("/api/v1/meals/history?meal_type=dinner&min_rating=5", headers=headers_a)
+    ).json()
     assert filtered["total"] == 1
     detail = (await client.get(f"/api/v1/meals/history/{meal_id_1}", headers=headers_a)).json()
     assert detail["ingredients_used"][0]["actual_qty"] == "150"
@@ -141,7 +167,9 @@ async def test_meal_history_lifecycle_feedback_preferences_and_isolation(
     headers_b = {"Authorization": f"Bearer {tok_b}"}
     assert (await client.get("/api/v1/auth/me", headers=headers_b)).status_code == 200
     assert (await client.get("/api/v1/meals/history", headers=headers_b)).json()["total"] == 0
-    assert (await client.get(f"/api/v1/meals/history/{meal_id_1}", headers=headers_b)).status_code == 404
+    assert (
+        await client.get(f"/api/v1/meals/history/{meal_id_1}", headers=headers_b)
+    ).status_code == 404
     assert (
         await client.patch(
             f"/api/v1/meals/history/{meal_id_1}/feedback",

@@ -46,14 +46,9 @@ async def seed_canonical_ingredients(
     ).all()
     existing_names = {norm for _, norm in existing_rows}
     existing_keys = {
-        normalize_ingredient_name_key(val)
-        for row in existing_rows
-        for val in row
-        if val
+        normalize_ingredient_name_key(val) for row in existing_rows for val in row if val
     }
-    alias_rows = (
-        await session.execute(select(IngredientAlias.normalized_alias))
-    ).scalars().all()
+    alias_rows = (await session.execute(select(IngredientAlias.normalized_alias))).scalars().all()
     existing_keys.update(normalize_ingredient_name_key(a) for a in alias_rows if a)
 
     inserted = 0

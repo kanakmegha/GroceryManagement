@@ -111,7 +111,15 @@ _WEIGHT_OR_VOLUME_ITEMS: frozenset[str] = frozenset(
 )
 
 _INGREDIENT_SYNONYMS: dict[str, set[str]] = {
-    "oil": {"soyabean oil", "soybean oil", "refined soyabean oil", "olive oil", "cooking oil", "vegetable oil", "sunflower oil"},
+    "oil": {
+        "soyabean oil",
+        "soybean oil",
+        "refined soyabean oil",
+        "olive oil",
+        "cooking oil",
+        "vegetable oil",
+        "sunflower oil",
+    },
     "olive oil": {"soyabean oil", "cooking oil", "vegetable oil", "sunflower oil"},
     "mustard seeds": {"mustard", "rai", "ral"},
     "mustard": {"mustard seeds", "rai", "ral"},
@@ -165,22 +173,28 @@ _UNIT_ALIASES: dict[str, str] = {
     "large": "pcs",
 }
 
-_QTY_UNIT_RE = re.compile(
-    r"^\s*(\d+(?:\.\d+)?)\s*([a-zA-Z]+)?(?:\s+([a-zA-Z]+))?\s*$"
-)
+_QTY_UNIT_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([a-zA-Z]+)?(?:\s+([a-zA-Z]+))?\s*$")
 
 
 def is_blocked_ingredient_name(name: str) -> bool:
-    """Return True if the string is internal prompt/context metadata rather than a real ingredient."""
+    """Return True if the string is internal prompt/context metadata rather than a real
+    ingredient.
+    """
     cleaned = re.sub(r"[^a-zA-Z0-9\s]", " ", (name or "").strip().lower())
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     if not cleaned or len(cleaned) < 2:
         return True
     if cleaned in _BLOCKED_INGREDIENT_PHRASES:
         return True
-    if any(phrase in cleaned for phrase in ("household inventory", "available inventory", "expiring item", "nearing expiry")):
-        return True
-    return False
+    return any(
+        phrase in cleaned
+        for phrase in (
+            "household inventory",
+            "available inventory",
+            "expiring item",
+            "nearing expiry",
+        )
+    )
 
 
 def parse_quantity_and_unit(
@@ -243,11 +257,14 @@ def parse_quantity_and_unit(
             parsed_unit = "cup"
 
     # Guard against fractional pcs on count-based whole items (e.g. 1.5 pcs cucumber -> 2 pcs)
-    if parsed_unit == "pcs" and any(c in name_low for c in _COUNT_ONLY_ITEMS):
-        if qty_val != qty_val.to_integral_value():
-            qty_val = qty_val.quantize(Decimal("1"))
-            if qty_val < Decimal("1"):
-                qty_val = Decimal("1")
+    if (
+        parsed_unit == "pcs"
+        and any(c in name_low for c in _COUNT_ONLY_ITEMS)
+        and qty_val != qty_val.to_integral_value()
+    ):
+        qty_val = qty_val.quantize(Decimal("1"))
+        if qty_val < Decimal("1"):
+            qty_val = Decimal("1")
 
     return qty_val, parsed_unit
 
@@ -271,7 +288,9 @@ def match_inventory_item(
     ingredient_name: str,
     inventory_items: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
-    """Match a recipe ingredient against active household inventory using normalized names & synonyms."""
+    """Match a recipe ingredient against active household inventory using normalized names &
+    synonyms.
+    """
     target_norm = FoodNameNormalizer.normalize(ingredient_name)
     target_low = ingredient_name.strip().lower()
     if not target_norm and not target_low:
@@ -292,7 +311,9 @@ def match_inventory_item(
                     else (
                         it.get("quantity")
                         if it.get("quantity") is not None
-                        else (it.get("normalized_qty") if it.get("normalized_qty") is not None else 1)
+                        else (
+                            it.get("normalized_qty") if it.get("normalized_qty") is not None else 1
+                        )
                     )
                 )
             )
@@ -307,10 +328,12 @@ def match_inventory_item(
             for it in active_items:
                 if it.get("family_id") and it.get("family_id") == req_res.family_id:
                     return it
-        # 3. If recipe specifies a specific variant, do NOT silently treat a different variant in same family as exact match
+        # 3. If recipe specifies a specific variant, do NOT silently treat a different variant in
+        # same family as exact match
         if not req_res.is_unspecified_variant and req_res.family_id:
             has_other_variant_same_family = any(
-                it.get("family_id") == req_res.family_id and it.get("variant_id") != req_res.variant_id
+                it.get("family_id") == req_res.family_id
+                and it.get("variant_id") != req_res.variant_id
                 for it in active_items
             )
             if has_other_variant_same_family:
@@ -321,9 +344,7 @@ def match_inventory_item(
         if syn_key in candidate_terms or any(syn_key in t for t in candidate_terms):
             candidate_terms.update(syn_vals)
 
-    target_tokens = {
-        t for t in re.split(r"[\s\-_/]+", target_norm or target_low) if len(t) >= 3
-    }
+    target_tokens = {t for t in re.split(r"[\s\-_/]+", target_norm or target_low) if len(t) >= 3}
 
     best_item: dict[str, Any] | None = None
     best_score = 0
@@ -338,20 +359,23 @@ def match_inventory_item(
         if qty <= Decimal("0"):
             continue
         raw_item_name = str(item.get("name") or "").strip().lower()
-        norm_item_name = str(
-            item.get("normalized_name") or FoodNameNormalizer.normalize(raw_item_name)
-        ).strip().lower()
+        norm_item_name = (
+            str(item.get("normalized_name") or FoodNameNormalizer.normalize(raw_item_name))
+            .strip()
+            .lower()
+        )
         if not raw_item_name and not norm_item_name:
             continue
 
         # Prevent modifier collisions: e.g. 'milk' must not match 'milk chocolate' or 'ice cream'
         if target_norm in {"milk", "whole milk", "fresh milk", "toned milk"} and any(
-            bad in raw_item_name for bad in ("chocolate", "ice cream", "biscuit", "cookie", "powder")
+            bad in raw_item_name
+            for bad in ("chocolate", "ice cream", "biscuit", "cookie", "powder")
         ):
             continue
 
         for term in candidate_terms:
-            if term == norm_item_name or term == raw_item_name:
+            if term in (norm_item_name, raw_item_name):
                 return item
             if len(term) >= 4 and (term in norm_item_name or norm_item_name in term):
                 score = 80 + len(term)
@@ -425,14 +449,27 @@ def reconcile_ingredient(
             status = "missing"
             missing_qty = _fmt_dec(req_qty)
     else:
-        # Incompatible units (e.g. pantry has 1 pcs vs recipe 50 g): never silently convert or claim full availability
+        # Incompatible units (e.g. pantry has 1 pcs vs recipe 50 g): never silently convert or
+        # claim full availability
         unit_compatible = False
         if inv_qty <= Decimal("0"):
             status = "missing"
             missing_qty = _fmt_dec(req_qty)
         elif req_unit in (
-            "g", "kg", "ml", "l", "pcs", "dozen",
-            "pack", "bottle", "packet", "box", "jar", "can", "loaf", "slice",
+            "g",
+            "kg",
+            "ml",
+            "l",
+            "pcs",
+            "dozen",
+            "pack",
+            "bottle",
+            "packet",
+            "box",
+            "jar",
+            "can",
+            "loaf",
+            "slice",
         ):
             status = "partial"
             missing_qty = _fmt_dec(req_qty)
@@ -485,8 +522,7 @@ def classify_recommendation_type(
             for it in inventory_items
         }
         has_pantry_sub = any(
-            any(tok and tok in sub.lower() for tok in pantry_tokens)
-            for sub in substitutions
+            any(tok and tok in sub.lower() for tok in pantry_tokens) for sub in substitutions
         )
         if (has_pantry_sub and partial_or_avail >= len(essential) - 1) or len(missing) == 0:
             return "COOK_WITH_SUBSTITUTIONS"

@@ -56,9 +56,7 @@ async def test_mvp_full_lifecycle_and_isolation(
     soon_exp = (today + timedelta(days=2)).isoformat()
     later_exp = (today + timedelta(days=10)).isoformat()
 
-    async def fake_extract_receipt(
-        filename: str, content_type: str, data: bytes
-    ) -> dict:
+    async def fake_extract_receipt(filename: str, content_type: str, data: bytes) -> dict:
         return {
             "adapter": "stub_ocr",
             "merchant_name": "BigBasket",
@@ -243,9 +241,7 @@ async def test_mvp_full_lifecycle_and_isolation(
     )
 
     # Start + Complete 600ml -> FEFO deducts 400ml from lot_1 (depleting it) + 200ml from lot_2
-    plan_ok_resp = await client.post(
-        "/api/v1/cooking-plans", headers=headers_a, json=plan_payload
-    )
+    plan_ok_resp = await client.post("/api/v1/cooking-plans", headers=headers_a, json=plan_payload)
     assert plan_ok_resp.status_code == 201
     ok_plan_id = plan_ok_resp.json()["id"]
 

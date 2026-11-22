@@ -1,6 +1,3 @@
-from decimal import Decimal
-from uuid import uuid4
-
 import httpx
 import pytest
 from sqlalchemy import select
@@ -13,7 +10,7 @@ from app.modules.catalog.ingredient_mapping_service import (
     confirm_ingredient_mapping,
     resolve_or_suggest_mapping,
 )
-from app.modules.inventory.models import CanonicalIngredient, CanonicalItem, IngredientMapping
+from app.modules.inventory.models import CanonicalIngredient, CanonicalItem
 from tests.conftest import EphemeralJWKSProvider
 
 
@@ -24,9 +21,7 @@ async def test_brand_agnostic_mapping_and_phase5_identity_distinctions(
     Session = async_sessionmaker(engine, expire_on_commit=False)
 
     async with Session() as db:
-        owner = User(
-            clerk_user_id="clerk_p2_1", email="p2@example.com", display_name="Phase2 User"
-        )
+        owner = User(clerk_user_id="clerk_p2_1", email="p2@example.com", display_name="Phase2 User")
         db.add(owner)
         await db.flush()
         hh = Household(name="Phase2 HH", created_by=owner.id)
@@ -120,7 +115,9 @@ async def test_brand_agnostic_mapping_and_phase5_identity_distinctions(
         )
         await db.flush()
 
-        res_aavin = await resolve_or_suggest_mapping(db, household_id=hh.id, canonical_item=aavin_fc)
+        res_aavin = await resolve_or_suggest_mapping(
+            db, household_id=hh.id, canonical_item=aavin_fc
+        )
         res_amul_gold = await resolve_or_suggest_mapping(
             db, household_id=hh.id, canonical_item=amul_gold
         )
@@ -152,7 +149,8 @@ async def test_brand_agnostic_mapping_and_phase5_identity_distinctions(
         assert res_sun.suggested_ingredient.normalized_name == "sunflower_oil"
         assert res_mus.suggested_ingredient.normalized_name == "mustard_oil"
 
-        # Rice Flour maps to Rice Flour (never Basmati Rice); Coconut Milk maps to Coconut Milk (never dairy Milk)
+        # Rice Flour maps to Rice Flour (never Basmati Rice); Coconut Milk maps to Coconut Milk
+        # (never dairy Milk)
         res_rf = await resolve_or_suggest_mapping(db, household_id=hh.id, canonical_item=rice_flour)
         res_cm = await resolve_or_suggest_mapping(
             db, household_id=hh.id, canonical_item=coconut_milk

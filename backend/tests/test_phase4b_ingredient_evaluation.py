@@ -1,10 +1,8 @@
 from decimal import Decimal
 
-import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.core.errors import AppError
 from app.modules.auth.models import Household, User
 from app.modules.catalog.ingredient_identity_service import (
     are_ingredients_incompatible,
@@ -150,7 +148,8 @@ FORM_DISTINCTION_PAIRS: list[tuple[str, str]] = [
     ("Garlic", "Garlic Paste"),
 ]
 
-# 15 brand/product-to-ingredient mapping examples: (product_name, category, base_unit, expected_ing_norm)
+# 15 brand/product-to-ingredient mapping examples: (product_name, category, base_unit,
+# expected_ing_norm)
 BRAND_PRODUCT_CASES: list[tuple[str, str, str, str]] = [
     ("Aavin Full Cream Milk 500ml", "dairy", "ml", "milk"),
     ("Amul Gold Milk 1L", "dairy", "ml", "milk"),
@@ -182,14 +181,18 @@ async def test_phase4b_evaluation_dataset_metrics(temp_db_url: str) -> None:
         eq_hits = 0
         for raw, exp_norm in EQUIVALENT_PAIRS:
             res = await resolve_ingredient_identity(db, raw_name=raw)
-            actual = id_to_norm.get(res.matched_ingredient_id) if res.matched_ingredient_id else None
+            actual = (
+                id_to_norm.get(res.matched_ingredient_id) if res.matched_ingredient_id else None
+            )
             if res.tier == "high" and actual == exp_norm:
                 eq_hits += 1
 
         trans_hits = 0
         for raw, exp_norm in TRANSLITERATED_PAIRS:
             res = await resolve_ingredient_identity(db, raw_name=raw)
-            actual = id_to_norm.get(res.matched_ingredient_id) if res.matched_ingredient_id else None
+            actual = (
+                id_to_norm.get(res.matched_ingredient_id) if res.matched_ingredient_id else None
+            )
             if res.tier == "high" and actual == exp_norm:
                 trans_hits += 1
 
@@ -197,7 +200,9 @@ async def test_phase4b_evaluation_dataset_metrics(temp_db_url: str) -> None:
         ocr_review = 0
         for raw, exp_norm in OCR_CORRUPTED_CASES:
             res = await resolve_ingredient_identity(db, raw_name=raw)
-            actual = id_to_norm.get(res.matched_ingredient_id) if res.matched_ingredient_id else None
+            actual = (
+                id_to_norm.get(res.matched_ingredient_id) if res.matched_ingredient_id else None
+            )
             if res.tier == "high" and actual == exp_norm:
                 ocr_hits += 1
             elif res.tier == "medium":
@@ -244,7 +249,11 @@ async def test_phase4b_evaluation_dataset_metrics(temp_db_url: str) -> None:
             mres = await resolve_or_suggest_mapping(
                 db, household_id=None, canonical_item=ci, auto_map_high_confidence=False
             )
-            if mres.tier == "high" and mres.suggested_ingredient and mres.suggested_ingredient.normalized_name == exp_norm:
+            if (
+                mres.tier == "high"
+                and mres.suggested_ingredient
+                and mres.suggested_ingredient.normalized_name == exp_norm
+            ):
                 brand_hits += 1
 
         print(
@@ -293,10 +302,18 @@ async def test_phase4b_merge_rollback_and_conflict_safety(temp_db_url: str) -> N
         await db.flush()
 
         p1 = CanonicalItem(
-            household_id=hh1.id, slug="p1-tom", name="Local Tamatar 1kg", category="vegetable", default_base_unit="g"
+            household_id=hh1.id,
+            slug="p1-tom",
+            name="Local Tamatar 1kg",
+            category="vegetable",
+            default_base_unit="g",
         )
         p2 = CanonicalItem(
-            household_id=hh2.id, slug="p2-tom", name="Farm Tomato 1kg", category="vegetable", default_base_unit="g"
+            household_id=hh2.id,
+            slug="p2-tom",
+            name="Farm Tomato 1kg",
+            category="vegetable",
+            default_base_unit="g",
         )
         db.add_all([p1, p2])
         await db.flush()
@@ -329,7 +346,9 @@ async def test_phase4b_merge_rollback_and_conflict_safety(temp_db_url: str) -> N
         await db.commit()
         assert (await db.get(CanonicalIngredient, dup.id)).is_active is True
         m_restored = (
-            await db.execute(select(IngredientMapping).where(IngredientMapping.household_id == hh1.id))
+            await db.execute(
+                select(IngredientMapping).where(IngredientMapping.household_id == hh1.id)
+            )
         ).scalar_one()
         assert m_restored.canonical_ingredient_id == dup.id
 

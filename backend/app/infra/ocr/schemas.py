@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -165,7 +165,9 @@ class ExtractedReceipt(BaseModel):
 
 
 def parse_inr_to_paise(value: str, *, allow_signed: bool = False) -> int | None:
-    """Parse a currency amount string (supports INR/USD/EUR/GBP/AED & European decimals) to minor units."""
+    """Parse a currency amount string (supports INR/USD/EUR/GBP/AED & European decimals) to minor
+    units.
+    """
     if not value:
         return None
     # Never concatenate two distinct numbers separated by a currency symbol (e.g. '110$110.00')
@@ -205,9 +207,7 @@ def parse_inr_to_paise(value: str, *, allow_signed: bool = False) -> int | None:
     return int(paise)
 
 
-def normalize_metric_unit(
-    qty: float, unit: str
-) -> tuple[float, BaseUnit] | tuple[None, None]:
+def normalize_metric_unit(qty: float, unit: str) -> tuple[float, BaseUnit] | tuple[None, None]:
     """Normalize a quantity and unit into base units ('g', 'ml', 'pcs')."""
     if qty <= 0 or not unit:
         return (None, None)
@@ -232,7 +232,18 @@ def normalize_metric_unit(
         return (round(qty, 4), "pcs")
     if u in {"dozen", "doz"}:
         return (round(qty * 12.0, 4), "pcs")
-    if u in {"pack", "packs", "pkt", "pkts", "packet", "packets", "box", "boxes", "bottle", "bottles"}:
+    if u in {
+        "pack",
+        "packs",
+        "pkt",
+        "pkts",
+        "packet",
+        "packets",
+        "box",
+        "boxes",
+        "bottle",
+        "bottles",
+    }:
         return (round(qty, 4), "pcs")
     return (None, None)
 

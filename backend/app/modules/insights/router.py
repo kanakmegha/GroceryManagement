@@ -31,7 +31,7 @@ from app.modules.insights.schemas import (
     SpendingTrendOut,
 )
 from app.modules.inventory.models import InventoryLot, StockLedger
-from app.modules.purchases.models import FoodConsumption, Purchase, PurchaseItem
+from app.modules.purchases.models import FoodConsumption, Purchase
 from app.modules.purchases.schemas import FoodConsumptionOut
 
 router = APIRouter(prefix="/insights", tags=["insights"])
@@ -64,7 +64,11 @@ def _purchase_category_split(
     linked_fcs = fc_by_pid.get(p.id)
     if linked_fcs:
         outside = sum(int(fc.amount_paise) for fc in linked_fcs)
-        grocery = max(0, p_total - outside) if p.receipt_category == "mixed" else max(0, p_total - outside)
+        grocery = (
+            max(0, p_total - outside)
+            if p.receipt_category == "mixed"
+            else max(0, p_total - outside)
+        )
         return grocery, outside, 0
 
     cat = str(p.receipt_category or "").strip().lower()
@@ -136,7 +140,9 @@ def _budget_to_out(b: HouseholdBudget) -> BudgetConfigOut:
         household_id=str(b.household_id),
         period_type=b.period_type,  # type: ignore[arg-type]
         overall_limit_paise=int(b.overall_limit_paise),
-        grocery_limit_paise=int(b.grocery_limit_paise) if b.grocery_limit_paise is not None else None,
+        grocery_limit_paise=int(b.grocery_limit_paise)
+        if b.grocery_limit_paise is not None
+        else None,
         outside_food_limit_paise=(
             int(b.outside_food_limit_paise) if b.outside_food_limit_paise is not None else None
         ),
@@ -198,7 +204,9 @@ async def insights_summary(
         prev_since = anchor_date - timedelta(days=1)
         prev_end = anchor_date
         effective_days = 1
-        since_dt = datetime(since_date.year, since_date.month, since_date.day, tzinfo=local_tz).astimezone(UTC)
+        since_dt = datetime(
+            since_date.year, since_date.month, since_date.day, tzinfo=local_tz
+        ).astimezone(UTC)
     elif period == "weekly":
         effective_period = "weekly"
         since_date, end_exclusive = _week_bounds(anchor_date)
@@ -207,7 +215,9 @@ async def insights_summary(
         prev_since = since_date - timedelta(days=7)
         prev_end = since_date
         effective_days = 7
-        since_dt = datetime(since_date.year, since_date.month, since_date.day, tzinfo=local_tz).astimezone(UTC)
+        since_dt = datetime(
+            since_date.year, since_date.month, since_date.day, tzinfo=local_tz
+        ).astimezone(UTC)
     elif period == "yearly":
         effective_period = "yearly"
         sel_year = year if year is not None else anchor_date.year
@@ -215,7 +225,9 @@ async def insights_summary(
         since_date, end_exclusive = _year_bounds(sel_year)
         prev_since, prev_end = _year_bounds(sel_year - 1)
         effective_days = (end_exclusive - since_date).days
-        since_dt = datetime(since_date.year, since_date.month, since_date.day, tzinfo=local_tz).astimezone(UTC)
+        since_dt = datetime(
+            since_date.year, since_date.month, since_date.day, tzinfo=local_tz
+        ).astimezone(UTC)
     elif period == "monthly" or year is not None or month is not None or days is None:
         effective_period = "monthly"
         sel_year = year if year is not None else (anchor_date.year if date_str else today.year)
@@ -225,7 +237,9 @@ async def insights_summary(
         prev_month = 12 if sel_month == 1 else sel_month - 1
         prev_since, prev_end = _month_bounds(prev_year, prev_month)
         effective_days = (end_exclusive - since_date).days
-        since_dt = datetime(since_date.year, since_date.month, since_date.day, tzinfo=local_tz).astimezone(UTC)
+        since_dt = datetime(
+            since_date.year, since_date.month, since_date.day, tzinfo=local_tz
+        ).astimezone(UTC)
     else:
         effective_period = "rolling"
         sel_year = None
@@ -237,7 +251,8 @@ async def insights_summary(
         effective_days = days
         since_dt = now.astimezone(UTC) - timedelta(days=days)
 
-    # Fetch all confirmed purchases for household so monthly, prev-month, and all-time totals reconcile cleanly
+    # Fetch all confirmed purchases for household so monthly, prev-month, and all-time totals
+    # reconcile cleanly
     confirmed_stmt = (
         select(Purchase)
         .options(selectinload(Purchase.items))
@@ -259,9 +274,7 @@ async def insights_summary(
         int(p.total_amount_paise) for p in all_confirmed if p.purchased_on >= month_since
     )
 
-    period_purchases = [
-        p for p in all_confirmed if since_date <= p.purchased_on < end_exclusive
-    ]
+    period_purchases = [p for p in all_confirmed if since_date <= p.purchased_on < end_exclusive]
     total_spend_paise = sum(int(p.total_amount_paise) for p in period_purchases)
 
     gross_subtotal_paise = 0
@@ -361,9 +374,7 @@ async def insights_summary(
                 SpendingTrendOut(date=d_iso, total_paise=vals[0], purchase_count=vals[1])
             )
     elif effective_period == "yearly" and sel_year is not None:
-        monthly_totals: dict[str, list[int]] = {
-            f"{sel_year}-{m:02d}": [0, 0] for m in range(1, 13)
-        }
+        monthly_totals: dict[str, list[int]] = {f"{sel_year}-{m:02d}": [0, 0] for m in range(1, 13)}
         for p in period_purchases:
             m_key = f"{p.purchased_on.year}-{p.purchased_on.month:02d}"
             if m_key in monthly_totals:
@@ -387,14 +398,18 @@ async def insights_summary(
     waste_entries = (await db.execute(waste_stmt)).scalars().all()
     total_waste_paise = sum(int(entry.unit_cost_paise) for entry in waste_entries)
 
-    expiring_stmt = select(func.count()).select_from(InventoryLot).where(
-        and_(
-            InventoryLot.household_id == ctx.household.id,
-            InventoryLot.lot_status == "active",
-            InventoryLot.remaining_qty > Decimal("0"),
-            InventoryLot.expires_on.is_not(None),
-            InventoryLot.expires_on >= today,
-            InventoryLot.expires_on <= soon_date,
+    expiring_stmt = (
+        select(func.count())
+        .select_from(InventoryLot)
+        .where(
+            and_(
+                InventoryLot.household_id == ctx.household.id,
+                InventoryLot.lot_status == "active",
+                InventoryLot.remaining_qty > Decimal("0"),
+                InventoryLot.expires_on.is_not(None),
+                InventoryLot.expires_on >= today,
+                InventoryLot.expires_on <= soon_date,
+            )
         )
     )
     expiring_soon_count = int((await db.execute(expiring_stmt)).scalar_one())
@@ -416,24 +431,24 @@ async def insights_summary(
             estimated_replenishment_paise += int(lot.unit_cost_paise or 0)
 
     purchase_count = len(period_purchases)
-    average_purchase_paise = (
-        round(total_spend_paise / purchase_count) if purchase_count > 0 else 0
-    )
+    average_purchase_paise = round(total_spend_paise / purchase_count) if purchase_count > 0 else 0
     if end_exclusive <= today:
         elapsed_days = effective_days
     elif since_date <= today < end_exclusive:
         elapsed_days = (today - since_date).days + 1
     else:
         elapsed_days = effective_days
-    average_daily_spend_paise = (
-        round(total_spend_paise / elapsed_days) if elapsed_days > 0 else 0
-    )
+    average_daily_spend_paise = round(total_spend_paise / elapsed_days) if elapsed_days > 0 else 0
 
     all_fc_rows = (
-        await db.execute(
-            select(FoodConsumption).where(FoodConsumption.household_id == ctx.household.id)
+        (
+            await db.execute(
+                select(FoodConsumption).where(FoodConsumption.household_id == ctx.household.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     fc_by_pid: dict[str, list[FoodConsumption]] = defaultdict(list)
     for fc in all_fc_rows:
         fc_by_pid[fc.purchase_id].append(fc)
@@ -524,17 +539,13 @@ async def insights_summary(
         )
 
     # Previous period comparison (only when confirmed purchases exist in the previous window)
-    prev_purchases = [
-        p for p in all_confirmed if prev_since <= p.purchased_on < prev_end
-    ]
+    prev_purchases = [p for p in all_confirmed if prev_since <= p.purchased_on < prev_end]
     prev_period_spend_paise: int | None = None
     prev_grocery_paise: int | None = None
     prev_outside_paise: int | None = None
     if prev_purchases:
         prev_period_spend_paise = sum(int(p.total_amount_paise) for p in prev_purchases)
-        prev_outside_paise = sum(
-            _purchase_outside_food_paise(p, fc_by_pid) for p in prev_purchases
-        )
+        prev_outside_paise = sum(_purchase_outside_food_paise(p, fc_by_pid) for p in prev_purchases)
         prev_grocery_paise = max(0, prev_period_spend_paise - prev_outside_paise)
 
     # All-time totals (deduplicated by purchase_id)
@@ -653,7 +664,10 @@ def _validate_budget_limits(payload: BudgetUpsertRequest) -> None:
     ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Combined grocery_limit_paise and outside_food_limit_paise cannot exceed overall_limit_paise.",
+            detail=(
+                "Combined grocery_limit_paise and outside_food_limit_paise cannot exceed "
+                "overall_limit_paise."
+            ),
         )
 
 
@@ -670,14 +684,18 @@ async def _upsert_budget_record(
         tz_name,
     )
     existing = (
-        await db.execute(
-            select(HouseholdBudget).where(
-                HouseholdBudget.household_id == ctx.household.id,
-                HouseholdBudget.period_type == payload.period_type,
-                HouseholdBudget.effective_from == canonical_start,
+        (
+            await db.execute(
+                select(HouseholdBudget).where(
+                    HouseholdBudget.household_id == ctx.household.id,
+                    HouseholdBudget.period_type == payload.period_type,
+                    HouseholdBudget.effective_from == canonical_start,
+                )
             )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
 
     if existing is not None:
         existing.overall_limit_paise = payload.overall_limit_paise
@@ -710,12 +728,16 @@ async def list_budgets(
     db: AsyncSession = Depends(get_db),
 ) -> BudgetListResponse:
     rows = (
-        await db.execute(
-            select(HouseholdBudget)
-            .where(HouseholdBudget.household_id == ctx.household.id)
-            .order_by(HouseholdBudget.period_type.asc(), HouseholdBudget.effective_from.desc())
+        (
+            await db.execute(
+                select(HouseholdBudget)
+                .where(HouseholdBudget.household_id == ctx.household.id)
+                .order_by(HouseholdBudget.period_type.asc(), HouseholdBudget.effective_from.desc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     items = [_budget_to_out(r) for r in rows]
 
     tz_name = getattr(ctx.household, "timezone", None) or "Asia/Kolkata"
@@ -796,13 +818,17 @@ async def delete_budget(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     row = (
-        await db.execute(
-            select(HouseholdBudget).where(
-                HouseholdBudget.id == budget_id,
-                HouseholdBudget.household_id == ctx.household.id,
+        (
+            await db.execute(
+                select(HouseholdBudget).where(
+                    HouseholdBudget.id == budget_id,
+                    HouseholdBudget.household_id == ctx.household.id,
+                )
             )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

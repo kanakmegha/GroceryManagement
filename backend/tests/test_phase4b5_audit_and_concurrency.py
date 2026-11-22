@@ -17,7 +17,6 @@ from app.modules.catalog.ingredient_identity_service import (
 )
 from app.modules.inventory.models import CanonicalIngredient, IngredientAlias
 
-
 SIMILAR_BUT_DISTINCT_PAIRS: list[tuple[str, str]] = [
     ("Basmati Rice", "Idli Rice"),
     ("Basmati Rice", "Rice Flour"),
@@ -100,12 +99,17 @@ async def test_concurrent_duplicate_creation_and_unrelated_integrity_error(
     async with Session() as db:
         for outcome in (o1, o3, o5, o7, o9):
             rows = (
-                await db.execute(
-                    select(CanonicalIngredient).where(
-                        CanonicalIngredient.normalized_name == outcome.ingredient.normalized_name
+                (
+                    await db.execute(
+                        select(CanonicalIngredient).where(
+                            CanonicalIngredient.normalized_name
+                            == outcome.ingredient.normalized_name
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             assert len(rows) == 1
 
         # 6. Unrelated IntegrityError (CHECK constraint on standard_unit) must NOT be swallowed
@@ -124,23 +128,26 @@ async def test_concurrent_duplicate_creation_and_unrelated_integrity_error(
 async def test_similar_but_distinct_pairs_bidirectional(
     temp_db_url: str,
 ) -> None:
-    """Verify all 10 similar-but-distinct pairs remain incompatible and distinct in both directions."""
+    """Verify all 10 similar-but-distinct pairs remain incompatible and distinct in both
+    directions.
+    """
     engine = create_async_engine(temp_db_url, connect_args={"check_same_thread": False})
     Session = async_sessionmaker(engine, expire_on_commit=False)
 
     async with Session() as db:
         by_name = {
-            ing.name: ing
-            for ing in (
-                await db.execute(select(CanonicalIngredient))
-            ).scalars().all()
+            ing.name: ing for ing in (await db.execute(select(CanonicalIngredient))).scalars().all()
         }
         for name_a, name_b in SIMILAR_BUT_DISTINCT_PAIRS:
             ing_a = by_name[name_a]
             ing_b = by_name[name_b]
             assert normalize_ingredient_name_key(name_a) != normalize_ingredient_name_key(name_b)
-            assert are_ingredients_incompatible(ing_a.normalized_name, ing_b.normalized_name) is True
-            assert are_ingredients_incompatible(ing_b.normalized_name, ing_a.normalized_name) is True
+            assert (
+                are_ingredients_incompatible(ing_a.normalized_name, ing_b.normalized_name) is True
+            )
+            assert (
+                are_ingredients_incompatible(ing_b.normalized_name, ing_a.normalized_name) is True
+            )
 
             res_a = await resolve_ingredient_identity(db, raw_name=name_a)
             res_b = await resolve_ingredient_identity(db, raw_name=name_b)

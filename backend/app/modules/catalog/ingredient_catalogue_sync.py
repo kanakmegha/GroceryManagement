@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from decimal import Decimal
-import re
 from uuid import UUID
 
 from sqlalchemy import select
@@ -38,9 +38,7 @@ async def sync_catalogue_to_db(db: AsyncSession) -> dict[str, int]:
     """Idempotently ensure all curated catalogue variants exist in `canonical_ingredients`."""
     cat = get_ingredient_catalogue()
     existing = list((await db.execute(select(CanonicalIngredient))).scalars().all())
-    by_var_id: dict[str, CanonicalIngredient] = {
-        c.variant_id: c for c in existing if c.variant_id
-    }
+    by_var_id: dict[str, CanonicalIngredient] = {c.variant_id: c for c in existing if c.variant_id}
     by_norm: dict[str, CanonicalIngredient] = {
         c.normalized_name: c for c in existing if c.normalized_name
     }
@@ -108,7 +106,8 @@ async def record_household_learned_alias(
     """Persist a household-scoped learned alias only from explicit user confirmation.
 
     Never overwrites curated global aliases (`household_id IS NULL`).
-    Idempotent under repeated or concurrent confirmations for the same (household_id, normalized_alias).
+    Idempotent under repeated or concurrent confirmations for the same
+    (household_id, normalized_alias).
     """
     norm_phrase = normalize_ingredient_text(phrase)
     if not norm_phrase:

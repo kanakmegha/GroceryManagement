@@ -9,7 +9,13 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.modules.inventory.models import CanonicalIngredient, CanonicalItem, IngredientMapping, InventoryLot, StockLedger
+from app.modules.inventory.models import (
+    CanonicalIngredient,
+    CanonicalItem,
+    IngredientMapping,
+    InventoryLot,
+    StockLedger,
+)
 from app.modules.purchases.models import Purchase, PurchaseItem
 from tests.conftest import EphemeralJWKSProvider
 
@@ -20,7 +26,9 @@ async def test_phase5c3_product_identification_vs_inventory_actions_separation(
     jwks_provider: EphemeralJWKSProvider,
     temp_db_url: str,
 ) -> None:
-    """Covers Part G: name edit, mapping confirm/reject, consumption/wastage/restock separation, isolation."""
+    """Covers Part G: name edit, mapping confirm/reject, consumption/wastage/restock separation,
+    isolation.
+    """
     tok_a = jwks_provider.make_token(sub="user_5c3_a", email="5c3a@example.com", name="5C3 A")
     tok_b = jwks_provider.make_token(sub="user_5c3_b", email="5c3b@example.com", name="5C3 B")
     hdr_a = {"Authorization": f"Bearer {tok_a}"}
@@ -39,40 +47,64 @@ async def test_phase5c3_product_identification_vs_inventory_actions_separation(
 
     async with Session() as db:
         apple_ing = (
-            await db.execute(select(CanonicalIngredient).where(CanonicalIngredient.normalized_name == "apple"))
+            await db.execute(
+                select(CanonicalIngredient).where(CanonicalIngredient.normalized_name == "apple")
+            )
         ).scalar_one()
 
         item = CanonicalItem(
-            household_id=hh_a, slug="raw-apple-5c3", name="mported Daily Apple (Sebu) R$",
-            category="produce", default_base_unit="pcs",
+            household_id=hh_a,
+            slug="raw-apple-5c3",
+            name="mported Daily Apple (Sebu) R$",
+            category="produce",
+            default_base_unit="pcs",
         )
         db.add(item)
         await db.flush()
 
         p = Purchase(
-            household_id=hh_a, created_by=user_a, merchant_name="FreshMart",
+            household_id=hh_a,
+            created_by=user_a,
+            merchant_name="FreshMart",
             purchased_on=date.today(),
-            receipt_category="grocery", total_amount_paise=15000, status="confirmed",
+            receipt_category="grocery",
+            total_amount_paise=15000,
+            status="confirmed",
         )
         db.add(p)
         await db.flush()
         pi = PurchaseItem(
-            purchase_id=p.id, household_id=hh_a, line_index=0,
+            purchase_id=p.id,
+            household_id=hh_a,
+            line_index=0,
             raw_text="mported Daily Apple (Sebu) R$ 150.00",
-            canonical_item_id=item.id, display_name="mported Daily Apple (Sebu) R$",
-            normalized_name="mported daily apple sebu", normalized_qty=Decimal("5.000"),
-            base_unit="pcs", unit_price_paise=3000, line_total_paise=15000, track_inventory=True,
+            canonical_item_id=item.id,
+            display_name="mported Daily Apple (Sebu) R$",
+            normalized_name="mported daily apple sebu",
+            normalized_qty=Decimal("5.000"),
+            base_unit="pcs",
+            unit_price_paise=3000,
+            line_total_paise=15000,
+            track_inventory=True,
         )
         lot = InventoryLot(
-            household_id=hh_a, canonical_item_id=item.id,
-            initial_qty=Decimal("5.000"), remaining_qty=Decimal("5.000"),
-            base_unit="pcs", unit_cost_paise=3000, lot_status="active",
+            household_id=hh_a,
+            canonical_item_id=item.id,
+            initial_qty=Decimal("5.000"),
+            remaining_qty=Decimal("5.000"),
+            base_unit="pcs",
+            unit_cost_paise=3000,
+            lot_status="active",
         )
         db.add_all([pi, lot])
         db.add(
             IngredientMapping(
-                household_id=hh_a, canonical_item_id=item.id, canonical_ingredient_id=apple_ing.id,
-                matching_confidence=Decimal("0.850"), mapping_source="catalogue", user_confirmed=False,
+                household_id=hh_a,
+                canonical_item_id=item.id,
+                canonical_ingredient_id=apple_ing.id,
+                matching_confidence=Decimal("0.850"),
+                mapping_source="catalogue",
+                user_confirmed=False,
             )
         )
         await db.commit()
@@ -117,7 +149,8 @@ async def test_phase5c3_product_identification_vs_inventory_actions_separation(
     assert Decimal(ing_sum["ingredients"][0]["unit_groups"][0]["total_qty"]) == Decimal("5.000")
     assert ing_sum["unmapped_products"] == []
 
-    # 5. Inventory actions (consume/adjust -1, waste -1, restock +2) change stock with StockLedger audit trail, not mapping
+    # 5. Inventory actions (consume/adjust -1, waste -1, restock +2) change stock with StockLedger
+    # audit trail, not mapping
     c_res = await client.post(
         f"/api/v1/inventory/lots/{lot_id}/adjust",
         headers=hdr_a,
@@ -139,15 +172,19 @@ async def test_phase5c3_product_identification_vs_inventory_actions_separation(
 
     ing_after = (await client.get("/api/v1/inventory/ingredients/summary", headers=hdr_a)).json()
     assert [x["name"] for x in ing_after["ingredients"]] == ["Apple"]
-    assert Decimal(ing_after["ingredients"][0]["unit_groups"][0]["total_qty"]) == Decimal("5.000")  # 5 - 1 - 1 + 2 = 5
+    assert Decimal(ing_after["ingredients"][0]["unit_groups"][0]["total_qty"]) == Decimal(
+        "5.000"
+    )  # 5 - 1 - 1 + 2 = 5
 
     # Raw OCR evidence untouched & ledger entries recorded
     async with Session() as db:
         pi_row = await db.get(PurchaseItem, pi_id)
         assert pi_row is not None and pi_row.raw_text == "mported Daily Apple (Sebu) R$ 150.00"
         ledgers = (
-            await db.execute(select(StockLedger).where(StockLedger.lot_id == lot_id))
-        ).scalars().all()
+            (await db.execute(select(StockLedger).where(StockLedger.lot_id == lot_id)))
+            .scalars()
+            .all()
+        )
         assert len(ledgers) == 3
 
     await engine.dispose()

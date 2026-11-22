@@ -23,13 +23,17 @@ async def compute_household_preference_profile(
       (would_make_again=True / rating == 5) take precedence over weak inferred patterns.
     """
     rows = (
-        await db.execute(
-            select(MealHistory)
-            .where(MealHistory.household_id == household_id)
-            .order_by(MealHistory.cooked_at.desc())
-            .limit(100)
+        (
+            await db.execute(
+                select(MealHistory)
+                .where(MealHistory.household_id == household_id)
+                .order_by(MealHistory.cooked_at.desc())
+                .limit(100)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     if not rows:
         return {
@@ -76,12 +80,20 @@ async def compute_household_preference_profile(
                 tag_counts[str(tag).strip().lower()] += 1
         if r.feedback_comment:
             c_low = r.feedback_comment.lower()
-            for kw in ("too spicy", "not spicy enough", "too oily", "too time-consuming", "make it again"):
+            for kw in (
+                "too spicy",
+                "not spicy enough",
+                "too oily",
+                "too time-consuming",
+                "make it again",
+            ):
                 if kw in c_low:
                     tag_counts[kw] += 1
 
         is_explicit_like = (r.rating is not None and r.rating >= 4) or r.would_make_again is True
-        is_explicit_dislike = (r.rating is not None and r.rating <= 2) or r.would_make_again is False
+        is_explicit_dislike = (
+            r.rating is not None and r.rating <= 2
+        ) or r.would_make_again is False
 
         if r.would_make_again is True and title not in want_again:
             want_again.append(title)

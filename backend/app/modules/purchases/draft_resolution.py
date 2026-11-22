@@ -1,4 +1,6 @@
-"""Real-time ingredient standardisation and separate quantity/financial checks for purchase drafts."""
+"""Real-time ingredient standardisation and separate quantity/financial checks for purchase
+drafts.
+"""
 
 from __future__ import annotations
 
@@ -15,7 +17,19 @@ from app.modules.catalog.ingredient_resolver import IngredientResolver
 from app.modules.catalog.measurement_service import validate_receipt_quantity_against_price
 from app.modules.inventory.models import CanonicalIngredient
 
-_PACKAGE_UNITS = {"pack", "packet", "bottle", "jar", "box", "can", "loaf", "bunch", "head", "tin", "pouch"}
+_PACKAGE_UNITS = {
+    "pack",
+    "packet",
+    "bottle",
+    "jar",
+    "box",
+    "can",
+    "loaf",
+    "bunch",
+    "head",
+    "tin",
+    "pouch",
+}
 
 
 @dataclass(frozen=True)
@@ -97,7 +111,8 @@ def _evaluate_financial_consistency(
     tolerance = max(200, int(round(max(line_total_paise, effective_total) * 0.05)))
 
     # Check both normalized_qty * unit_price and raw_qty * unit_price,
-    # as well as single-pack unit_price == effective_total when qty is weight/volume (e.g. 1000g @ Rs 50/pack).
+    # as well as single-pack unit_price == effective_total when qty is weight/volume (e.g. 1000g @
+    # Rs 50/pack).
     candidates = [
         int(round(float(normalized_qty) * unit_price_paise)),
     ]
@@ -106,13 +121,17 @@ def _evaluate_financial_consistency(
     if unit_price_paise == line_total_paise or abs(unit_price_paise - effective_total) <= tolerance:
         candidates.append(unit_price_paise)
 
-    if any(abs(c - effective_total) <= tolerance or abs(c - line_total_paise) <= tolerance for c in candidates):
+    if any(
+        abs(c - effective_total) <= tolerance or abs(c - line_total_paise) <= tolerance
+        for c in candidates
+    ):
         return False, None
 
     expected_qty = float(raw_qty) if raw_qty is not None and raw_qty > 0 else float(normalized_qty)
     return (
         True,
-        f"Financial check: {expected_qty:g} × ₹{unit_price_paise / 100:.2f} does not match line total ₹{line_total_paise / 100:.2f}.",
+        f"Financial check: {expected_qty:g} × ₹{unit_price_paise / 100:.2f} does not "
+        f"match line total ₹{line_total_paise / 100:.2f}.",
     )
 
 
@@ -154,7 +173,8 @@ def _evaluate_quantity_and_unit(
         hint = f" ({', '.join(supported_units[:3])})" if supported_units else ""
         return (
             "MEDIUM",
-            f"Package unit '{raw_unit}' without explicit net weight/volume; verify quantity or unit{hint}.",
+            f"Package unit '{raw_unit}' without explicit net weight/volume; verify "
+            f"quantity or unit{hint}.",
             supported_units,
         )
 
@@ -168,7 +188,8 @@ def _evaluate_quantity_and_unit(
             label = standardized_name or "this ingredient"
             return (
                 "MEDIUM",
-                f"Unit '{base_unit}' differs from standard units for {label} ({', '.join(supported_units)}).",
+                f"Unit '{base_unit}' differs from standard units for {label} "
+                f"({', '.join(supported_units)}).",
                 supported_units,
             )
 
@@ -252,7 +273,9 @@ async def evaluate_draft_item_resolution(
         )
         cat_fam = catalogue.get_family(cat_var.family_id) if cat_var else None
         measurement_policy = cat_fam.measurement if cat_fam else None
-        std_name = ing.name if ing is not None else (cat_var.canonical_name if cat_var else display_name)
+        std_name = (
+            ing.name if ing is not None else (cat_var.canonical_name if cat_var else display_name)
+        )
         qty_tier, qty_reason, supported = _evaluate_quantity_and_unit(
             normalized_qty=normalized_qty,
             base_unit=base_unit,
@@ -264,13 +287,19 @@ async def evaluate_draft_item_resolution(
         )
         return DraftItemResolution(
             standardized_name=std_name,
-            ingredient_family_id=(ing.family_id if ing else None) or (cat_fam.id if cat_fam else None),
-            ingredient_family_name=(ing.family_name if ing else None) or (cat_fam.canonical_name if cat_fam else None),
-            ingredient_variant_id=(ing.variant_id if ing else None) or (cat_var.id if cat_var else None),
+            ingredient_family_id=(ing.family_id if ing else None)
+            or (cat_fam.id if cat_fam else None),
+            ingredient_family_name=(ing.family_name if ing else None)
+            or (cat_fam.canonical_name if cat_fam else None),
+            ingredient_variant_id=(ing.variant_id if ing else None)
+            or (cat_var.id if cat_var else None),
             canonical_ingredient_id=ing.id if ing is not None else None,
-            ingredient_category=(ing.category if ing else None) or (cat_fam.category if cat_fam else None),
+            ingredient_category=(ing.category if ing else None)
+            or (cat_fam.category if cat_fam else None),
             is_unspecified_variant=bool(
-                ing.is_unspecified_variant if ing is not None else (cat_var.is_unspecified if cat_var else False)
+                ing.is_unspecified_variant
+                if ing is not None
+                else (cat_var.is_unspecified if cat_var else False)
             ),
             ingredient_confidence_tier="HIGH",
             ingredient_confidence_score=100,
@@ -294,7 +323,12 @@ async def evaluate_draft_item_resolution(
         receipt_text=receipt_text,
         canonical_item_id=canonical_item_id,
     )
-    if res.variant_id is None and raw_text and raw_text.strip() and raw_text.strip() != receipt_text:
+    if (
+        res.variant_id is None
+        and raw_text
+        and raw_text.strip()
+        and raw_text.strip() != receipt_text
+    ):
         raw_res = await resolver.resolve_for_household(
             db,
             household_id=household_id,
@@ -314,7 +348,9 @@ async def evaluate_draft_item_resolution(
     score = int(round(float(res.confidence) * 100))
     if res.variant_id is None or res.match_source == "unresolved_review" or score <= 0:
         tier = "UNMATCHED"
-        review_reason = res.reason or "No reliable catalogue match found; select or enter a pantry ingredient."
+        review_reason = (
+            res.reason or "No reliable catalogue match found; select or enter a pantry ingredient."
+        )
     elif user_approved_ingredient:
         tier = "HIGH"
         score = max(score, 95)
@@ -327,7 +363,9 @@ async def evaluate_draft_item_resolution(
         review_reason = res.reason or "Partial or ambiguous ingredient match; please verify."
     else:
         tier = "LOW"
-        review_reason = res.reason or "Low-confidence fuzzy match; explicit approval or correction required."
+        review_reason = (
+            res.reason or "Low-confidence fuzzy match; explicit approval or correction required."
+        )
 
     suggestions_out: list[dict[str, Any]] = []
     for sug in (res.suggestions or ())[:5]:

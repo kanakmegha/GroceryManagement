@@ -40,19 +40,39 @@ async def test_chini_df_merge_preservation_rollback_and_isolation(temp_db_url: s
 
         # Create CHINI DF survivor + 3 duplicates totaling 9000g across 4 lots
         c_surv = CanonicalItem(
-            household_id=hh1.id, slug="chini-df", name="CHINI DF", category="general", default_base_unit="g"
+            household_id=hh1.id,
+            slug="chini-df",
+            name="CHINI DF",
+            category="general",
+            default_base_unit="g",
         )
         c_d1 = CanonicalItem(
-            household_id=hh1.id, slug="chinidf", name='" CHINIDF.', category="general", default_base_unit="g"
+            household_id=hh1.id,
+            slug="chinidf",
+            name='" CHINIDF.',
+            category="general",
+            default_base_unit="g",
         )
         c_d2 = CanonicalItem(
-            household_id=hh1.id, slug="1-chinldf", name="1 CHINLDF", category="general", default_base_unit="g"
+            household_id=hh1.id,
+            slug="1-chinldf",
+            name="1 CHINLDF",
+            category="general",
+            default_base_unit="g",
         )
         c_d3 = CanonicalItem(
-            household_id=hh1.id, slug="chinldf", name="CHINLDF", category="general", default_base_unit="g"
+            household_id=hh1.id,
+            slug="chinldf",
+            name="CHINLDF",
+            category="general",
+            default_base_unit="g",
         )
         c_other_hh = CanonicalItem(
-            household_id=hh2.id, slug="chini-df-hh2", name="CHINI DF", category="general", default_base_unit="g"
+            household_id=hh2.id,
+            slug="chini-df-hh2",
+            name="CHINI DF",
+            category="general",
+            default_base_unit="g",
         )
         db.add_all([c_surv, c_d1, c_d2, c_d3, c_other_hh])
         await db.flush()
@@ -165,32 +185,48 @@ async def test_chini_df_merge_preservation_rollback_and_isolation(temp_db_url: s
 
         # Verify all lots, ledgers, purchase items, aliases preserved & point to survivor
         surv_lots = (
-            await db.execute(
-                select(InventoryLot).where(InventoryLot.canonical_item_id == c_surv.id)
+            (
+                await db.execute(
+                    select(InventoryLot).where(InventoryLot.canonical_item_id == c_surv.id)
+                )
             )
-        ).scalars().all()
-        assert {l.id for l in surv_lots} == set(lot_ids)
+            .scalars()
+            .all()
+        )
+        assert {lot.id for lot in surv_lots} == set(lot_ids)
         surv_pis = (
-            await db.execute(
-                select(PurchaseItem).where(PurchaseItem.canonical_item_id == c_surv.id)
+            (
+                await db.execute(
+                    select(PurchaseItem).where(PurchaseItem.canonical_item_id == c_surv.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert {pi.id for pi in surv_pis} == set(pi_ids)
         assert {pi.raw_text for pi in surv_pis} == {r[1] for r in records_spec}
         surv_leds = (
-            await db.execute(
-                select(StockLedger).where(StockLedger.canonical_item_id == c_surv.id)
+            (
+                await db.execute(
+                    select(StockLedger).where(StockLedger.canonical_item_id == c_surv.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert {led.id for led in surv_leds} == set(ledger_ids)
         surv_aliases = (
-            await db.execute(select(ItemAlias).where(ItemAlias.canonical_item_id == c_surv.id))
-        ).scalars().all()
+            (await db.execute(select(ItemAlias).where(ItemAlias.canonical_item_id == c_surv.id)))
+            .scalars()
+            .all()
+        )
         assert len(surv_aliases) == 4
 
         # Duplicates are soft-merged, never deleted
         d1_ref = await db.get(CanonicalItem, c_d1.id)
-        assert d1_ref is not None and d1_ref.is_active is False and d1_ref.merged_into_id == c_surv.id
+        assert (
+            d1_ref is not None and d1_ref.is_active is False and d1_ref.merged_into_id == c_surv.id
+        )
 
         # 10. Repeated merge rejection
         with pytest.raises(AppError) as exc_rep:
@@ -208,7 +244,11 @@ async def test_chini_df_merge_preservation_rollback_and_isolation(temp_db_url: s
         )
         await db.commit()
         d1_restored = await db.get(CanonicalItem, c_d1.id)
-        assert d1_restored is not None and d1_restored.is_active is True and d1_restored.merged_into_id is None
+        assert (
+            d1_restored is not None
+            and d1_restored.is_active is True
+            and d1_restored.merged_into_id is None
+        )
         log_row = await db.get(CanonicalMergeLog, res.merge_log_ids[0])
         assert log_row is not None and log_row.reversed_at is not None
 
@@ -238,12 +278,16 @@ async def test_merge_ingredient_mapping_conflict_handling(temp_db_url: str) -> N
 
         ing_basmati = (
             await db.execute(
-                select(CanonicalIngredient).where(CanonicalIngredient.normalized_name == "basmati_rice")
+                select(CanonicalIngredient).where(
+                    CanonicalIngredient.normalized_name == "basmati_rice"
+                )
             )
         ).scalar_one()
         ing_idli = (
             await db.execute(
-                select(CanonicalIngredient).where(CanonicalIngredient.normalized_name == "idli_rice")
+                select(CanonicalIngredient).where(
+                    CanonicalIngredient.normalized_name == "idli_rice"
+                )
             )
         ).scalar_one()
 

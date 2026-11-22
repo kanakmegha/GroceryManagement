@@ -26,7 +26,9 @@ async def test_phase5c4_direct_ingredient_edit_rename_and_stock_adjustment(
     jwks_provider: EphemeralJWKSProvider,
     temp_db_url: str,
 ) -> None:
-    """Covers Part F (1-13): rename, duplicate guard, FEFO stock increase/decrease, unit safety, isolation."""
+    """Covers Part F (1-13): rename, duplicate guard, FEFO stock increase/decrease, unit safety,
+    isolation.
+    """
     tok_a = jwks_provider.make_token(sub="user_5c4_a", email="5c4a@example.com", name="5C4 A")
     tok_b = jwks_provider.make_token(sub="user_5c4_b", email="5c4b@example.com", name="5C4 B")
     hdr_a = {"Authorization": f"Bearer {tok_a}"}
@@ -45,68 +47,117 @@ async def test_phase5c4_direct_ingredient_edit_rename_and_stock_adjustment(
 
     async with Session() as db:
         milk_ing = (
-            await db.execute(select(CanonicalIngredient).where(CanonicalIngredient.normalized_name == "milk"))
+            await db.execute(
+                select(CanonicalIngredient).where(CanonicalIngredient.normalized_name == "milk")
+            )
         ).scalar_one()
         chana_ing = (
-            await db.execute(select(CanonicalIngredient).where(CanonicalIngredient.normalized_name == "chana_dal"))
+            await db.execute(
+                select(CanonicalIngredient).where(
+                    CanonicalIngredient.normalized_name == "chana_dal"
+                )
+            )
         ).scalar_one()
 
         aavin = CanonicalItem(
-            household_id=hh_a, slug="aavin-5c4", name="Aavin Full Cream Milk",
-            category="dairy", default_base_unit="ml",
+            household_id=hh_a,
+            slug="aavin-5c4",
+            name="Aavin Full Cream Milk",
+            category="dairy",
+            default_base_unit="ml",
         )
         amul = CanonicalItem(
-            household_id=hh_a, slug="amul-5c4", name="Amul Gold Milk",
-            category="dairy", default_base_unit="ml",
+            household_id=hh_a,
+            slug="amul-5c4",
+            name="Amul Gold Milk",
+            category="dairy",
+            default_base_unit="ml",
         )
         apples = CanonicalItem(
-            household_id=hh_a, slug="apples-5c4", name="Fresh Apples",
-            category="produce", default_base_unit="pcs",
+            household_id=hh_a,
+            slug="apples-5c4",
+            name="Fresh Apples",
+            category="produce",
+            default_base_unit="pcs",
         )
         db.add_all([aavin, amul, apples])
         await db.flush()
 
         p = Purchase(
-            household_id=hh_a, created_by=user_a, merchant_name="FreshMart",
-            purchased_on=date.today(), receipt_category="grocery", total_amount_paise=20000, status="confirmed",
+            household_id=hh_a,
+            created_by=user_a,
+            merchant_name="FreshMart",
+            purchased_on=date.today(),
+            receipt_category="grocery",
+            total_amount_paise=20000,
+            status="confirmed",
         )
         db.add(p)
         await db.flush()
         pi = PurchaseItem(
-            purchase_id=p.id, household_id=hh_a, line_index=0,
+            purchase_id=p.id,
+            household_id=hh_a,
+            line_index=0,
             raw_text="Aavin Full Cream Milk 1 L Pouch R$ 60",
-            canonical_item_id=aavin.id, display_name="Aavin Full Cream Milk",
-            normalized_name="aavin full cream milk", normalized_qty=Decimal("1000.000"),
-            base_unit="ml", unit_price_paise=6000, line_total_paise=6000, track_inventory=True,
+            canonical_item_id=aavin.id,
+            display_name="Aavin Full Cream Milk",
+            normalized_name="aavin full cream milk",
+            normalized_qty=Decimal("1000.000"),
+            base_unit="ml",
+            unit_price_paise=6000,
+            line_total_paise=6000,
+            track_inventory=True,
         )
         lot_1 = InventoryLot(
-            household_id=hh_a, canonical_item_id=aavin.id,
-            initial_qty=Decimal("1000.000"), remaining_qty=Decimal("1000.000"),
-            base_unit="ml", unit_cost_paise=6000, lot_status="active",
+            household_id=hh_a,
+            canonical_item_id=aavin.id,
+            initial_qty=Decimal("1000.000"),
+            remaining_qty=Decimal("1000.000"),
+            base_unit="ml",
+            unit_cost_paise=6000,
+            lot_status="active",
         )
         lot_2 = InventoryLot(
-            household_id=hh_a, canonical_item_id=amul.id,
-            initial_qty=Decimal("1500.000"), remaining_qty=Decimal("1500.000"),
-            base_unit="ml", unit_cost_paise=7000, lot_status="active",
+            household_id=hh_a,
+            canonical_item_id=amul.id,
+            initial_qty=Decimal("1500.000"),
+            remaining_qty=Decimal("1500.000"),
+            base_unit="ml",
+            unit_cost_paise=7000,
+            lot_status="active",
         )
         lot_app = InventoryLot(
-            household_id=hh_a, canonical_item_id=apples.id,
-            initial_qty=Decimal("4.000"), remaining_qty=Decimal("4.000"),
-            base_unit="pcs", unit_cost_paise=2500, lot_status="active",
+            household_id=hh_a,
+            canonical_item_id=apples.id,
+            initial_qty=Decimal("4.000"),
+            remaining_qty=Decimal("4.000"),
+            base_unit="pcs",
+            unit_cost_paise=2500,
+            lot_status="active",
         )
         db.add_all([pi, lot_1, lot_2, lot_app])
-        db.add_all([
-            IngredientMapping(
-                household_id=hh_a, canonical_item_id=aavin.id, canonical_ingredient_id=milk_ing.id,
-                matching_confidence=Decimal("1.000"), mapping_source="user_confirmed", user_confirmed=True,
-            ),
-            IngredientMapping(
-                household_id=hh_a, canonical_item_id=amul.id, canonical_ingredient_id=milk_ing.id,
-                matching_confidence=Decimal("1.000"), mapping_source="user_confirmed", user_confirmed=True,
-            ),
-        ])
+        db.add_all(
+            [
+                IngredientMapping(
+                    household_id=hh_a,
+                    canonical_item_id=aavin.id,
+                    canonical_ingredient_id=milk_ing.id,
+                    matching_confidence=Decimal("1.000"),
+                    mapping_source="user_confirmed",
+                    user_confirmed=True,
+                ),
+                IngredientMapping(
+                    household_id=hh_a,
+                    canonical_item_id=amul.id,
+                    canonical_ingredient_id=milk_ing.id,
+                    matching_confidence=Decimal("1.000"),
+                    mapping_source="user_confirmed",
+                    user_confirmed=True,
+                ),
+            ]
+        )
         await db.commit()
-        milk_id, chana_id, aavin_id, pi_id = milk_ing.id, chana_ing.id, aavin.id, pi.id
+        milk_id, _chana_id, aavin_id, pi_id = milk_ing.id, chana_ing.id, aavin.id, pi.id
 
     # 13. Household isolation: Household B cannot edit Household A's ingredient
     iso = await client.patch(
@@ -131,7 +182,9 @@ async def test_phase5c4_direct_ingredient_edit_rename_and_stock_adjustment(
         json={"name": "Dairy Milk", "target_quantity": 3, "unit": "pcs"},
     )
     assert incomp.status_code == 422
-    check_after_err = (await client.get("/api/v1/inventory/ingredients/summary", headers=hdr_a)).json()
+    check_after_err = (
+        await client.get("/api/v1/inventory/ingredients/summary", headers=hdr_a)
+    ).json()
     assert check_after_err["ingredients"][0]["name"] == "Milk"
 
     # 1, 2, 5, 8. Rename Milk -> Dairy Milk and increase 2500 ml -> 3 L (3000 ml)
@@ -174,13 +227,17 @@ async def test_phase5c4_direct_ingredient_edit_rename_and_stock_adjustment(
         pi_row = await db.get(PurchaseItem, pi_id)
         assert pi_row is not None and pi_row.raw_text == "Aavin Full Cream Milk 1 L Pouch R$ 60"
         ledgers = (
-            await db.execute(
-                select(StockLedger).where(
-                    StockLedger.household_id == hh_a,
-                    StockLedger.notes == "User-requested pantry quantity correction",
+            (
+                await db.execute(
+                    select(StockLedger).where(
+                        StockLedger.household_id == hh_a,
+                        StockLedger.notes == "User-requested pantry quantity correction",
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(ledgers) >= 2
 
     await engine.dispose()

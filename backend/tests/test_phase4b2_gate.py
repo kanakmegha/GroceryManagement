@@ -22,7 +22,6 @@ from app.modules.inventory.models import (
     CanonicalIngredient,
     CanonicalItem,
     IngredientAlias,
-    IngredientMapping,
     InventoryLot,
     StockLedger,
 )
@@ -133,7 +132,9 @@ async def test_merge_lifecycle_no_partial_mutation_and_history_preservation(
         ).scalar_one()
         puree = (
             await db.execute(
-                select(CanonicalIngredient).where(CanonicalIngredient.normalized_name == "tomato_puree")
+                select(CanonicalIngredient).where(
+                    CanonicalIngredient.normalized_name == "tomato_puree"
+                )
             )
         ).scalar_one()
         dup_tom = CanonicalIngredient(

@@ -1,4 +1,5 @@
 """Isolated Experimental OCR Service (zero writes to purchases, inventory, or learning)."""
+
 from __future__ import annotations
 
 import time
@@ -10,10 +11,10 @@ from app.infra.ocr.pipeline import extract_receipt
 from app.modules.experimental_ocr.provider import ExperimentalV10_6ExtractionProvider
 from app.modules.experimental_ocr.schemas import (
     ExistingOcrSnapshot,
-    ExtractModeType,
     ExperimentalExtractionResult,
     ExperimentalHealthOut,
     ExperimentalJobOut,
+    ExtractModeType,
 )
 
 # Isolated household-scoped job store (never touches production DB tables)
@@ -37,7 +38,9 @@ def get_experimental_health(settings: Settings) -> ExperimentalHealthOut:
     )
 
 
-async def _run_existing_readonly(filename: str, content_type: str, data: bytes) -> ExistingOcrSnapshot:
+async def _run_existing_readonly(
+    filename: str, content_type: str, data: bytes
+) -> ExistingOcrSnapshot:
     t0 = time.perf_counter()
     try:
         ext = await extract_receipt(filename=filename, content_type=content_type, data=data)
@@ -47,16 +50,24 @@ async def _run_existing_readonly(filename: str, content_type: str, data: bytes) 
             latency_ms=round((time.perf_counter() - t0) * 1000.0, 1),
             merchant_name=ext.merchant_name,
             receipt_date=ext.receipt_date,
-            subtotal_rupees=round(ext.subtotal_paise / 100.0, 2) if ext.subtotal_paise is not None else None,
+            subtotal_rupees=round(ext.subtotal_paise / 100.0, 2)
+            if ext.subtotal_paise is not None
+            else None,
             tax_rupees=round(ext.tax_paise / 100.0, 2) if ext.tax_paise is not None else None,
-            grand_total_rupees=round(ext.grand_total_paise / 100.0, 2) if ext.grand_total_paise is not None else None,
+            grand_total_rupees=round(ext.grand_total_paise / 100.0, 2)
+            if ext.grand_total_paise is not None
+            else None,
             items=[
                 {
                     "name": ln.name,
                     "qty": ln.quantity,
                     "unit": ln.unit,
-                    "unit_price_rupees": round(ln.unit_price_paise / 100.0, 2) if ln.unit_price_paise is not None else None,
-                    "line_total_rupees": round(ln.total_paise / 100.0, 2) if ln.total_paise is not None else None,
+                    "unit_price_rupees": round(ln.unit_price_paise / 100.0, 2)
+                    if ln.unit_price_paise is not None
+                    else None,
+                    "line_total_rupees": round(ln.total_paise / 100.0, 2)
+                    if ln.total_paise is not None
+                    else None,
                 }
                 for ln in ext.lines
             ],
@@ -108,7 +119,9 @@ def get_experimental_job(household_id: str, job_id: str) -> ExperimentalJobOut |
     return _EXPERIMENTAL_JOBS.get(household_id, {}).get(job_id)
 
 
-def attach_ground_truth(household_id: str, job_id: str, gt: dict[str, Any]) -> ExperimentalJobOut | None:
+def attach_ground_truth(
+    household_id: str, job_id: str, gt: dict[str, Any]
+) -> ExperimentalJobOut | None:
     job = get_experimental_job(household_id, job_id)
     if job is None:
         return None

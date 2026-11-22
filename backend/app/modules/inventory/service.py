@@ -174,10 +174,15 @@ async def get_inventory_summary(
         for it in (
             await db.execute(
                 select(CanonicalItem).where(
-                    or_(CanonicalItem.household_id == household_id, CanonicalItem.household_id.is_(None))
+                    or_(
+                        CanonicalItem.household_id == household_id,
+                        CanonicalItem.household_id.is_(None),
+                    )
                 )
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     }
 
     def _active_survivor(item_obj: CanonicalItem) -> CanonicalItem | None:
@@ -341,8 +346,7 @@ async def adjust_lot(
             status_code=409,
             code="INSUFFICIENT_STOCK",
             message=(
-                f"Cannot deduct {-delta} from lot {lot.id}; "
-                f"only {lot.remaining_qty} remaining."
+                f"Cannot deduct {-delta} from lot {lot.id}; only {lot.remaining_qty} remaining."
             ),
         )
 
@@ -420,8 +424,9 @@ async def list_catalog_items(
         filters.append(CanonicalItem.category == category.strip().lower())
 
     total = int(
-        (await db.execute(select(func.count()).select_from(CanonicalItem).where(*filters)))
-        .scalar_one()
+        (
+            await db.execute(select(func.count()).select_from(CanonicalItem).where(*filters))
+        ).scalar_one()
     )
     stmt = (
         select(CanonicalItem)

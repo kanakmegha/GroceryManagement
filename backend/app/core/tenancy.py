@@ -45,9 +45,7 @@ async def set_pg_rls_context(
 async def upsert_clerk_user(db: AsyncSession, claims: ClerkClaims) -> User:
     if _is_postgresql(db):
         result = await db.execute(
-            text(
-                "SELECT upsert_clerk_user(:clerk_user_id, :email, :display_name)"
-            ),
+            text("SELECT upsert_clerk_user(:clerk_user_id, :email, :display_name)"),
             {
                 "clerk_user_id": claims.sub,
                 "email": claims.email,

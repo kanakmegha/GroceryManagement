@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import re
+from dataclasses import dataclass, field
 from typing import Any
 
 _VAGUE_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -16,7 +16,8 @@ _VAGUE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bserve\s+hot\s+with\s+fresh\s+rotis?\b", re.IGNORECASE),
 )
 
-# Distinct culinary ingredients that must NOT be invented in instructions if absent from recipe["ingredients"].
+# Distinct culinary ingredients that must NOT be invented in instructions if absent from
+# recipe["ingredients"].
 _TRACKED_CULINARY_INGREDIENTS: dict[str, tuple[str, ...]] = {
     "cumin": ("cumin", "jeera"),
     "mustard": ("mustard", "rai"),
@@ -104,7 +105,9 @@ def validate_recipe_quality(recipe: dict[str, Any]) -> RecipeQualityResult:
     if structured_steps:
         if len(structured_steps) < min_steps:
             issues.append(
-                f"Expected at least {min_steps} structured steps for {'multi-component ' if is_multi else ''}recipe, found {len(structured_steps)}."
+                f"Expected at least {min_steps} structured steps for "
+                f"{'multi-component ' if is_multi else ''}recipe, found "
+                f"{len(structured_steps)}."
             )
         step_texts: list[str] = []
         used_ing_names: set[str] = set()
@@ -146,7 +149,8 @@ def validate_recipe_quality(recipe: dict[str, Any]) -> RecipeQualityResult:
             continue
         present_in_recipe = any(_ingredient_matches_token(n, aliases) for n in ing_names)
         if not present_in_recipe:
-            # Allow "ghee" only if recipe has "Oil" or "Butter" as optional fat fallback? No, keep strict unless "oil or ghee" isn't used.
+            # Allow "ghee" only if recipe has "Oil" or "Butter" as optional fat fallback? No, keep
+            # strict unless "oil or ghee" isn't used.
             issues.append(f"Step references '{key}' which is not listed in recipe ingredients.")
 
     # Check every essential ingredient is used in at least one step
@@ -172,7 +176,8 @@ def validate_recipe_quality(recipe: dict[str, Any]) -> RecipeQualityResult:
             part_tokens = [
                 t
                 for t in _normalize_text(part).split()
-                if len(t) >= 3 and t not in {"with", "and", "whole", "wheat", "simple", "crispy", "fresh"}
+                if len(t) >= 3
+                and t not in {"with", "and", "whole", "wheat", "simple", "crispy", "fresh"}
             ]
             if part_tokens and not any(
                 re.search(rf"\b{re.escape(t)}\b", norm_combined) for t in part_tokens
@@ -187,7 +192,9 @@ def validate_recipe_quality(recipe: dict[str, Any]) -> RecipeQualityResult:
     )
 
 
-def audit_recipe_catalogue(recipes: list[dict[str, Any]]) -> tuple[int, int, list[RecipeQualityResult]]:
+def audit_recipe_catalogue(
+    recipes: list[dict[str, Any]],
+) -> tuple[int, int, list[RecipeQualityResult]]:
     results = [validate_recipe_quality(r) for r in recipes]
     failed = [r for r in results if not r.is_valid]
     return len(results), len(failed), failed

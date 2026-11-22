@@ -36,7 +36,9 @@ async def dry_run_ingredient_merge(
 ) -> IngredientMergeDryRun:
     """Read-only dry-run report before merging two CanonicalIngredients."""
     if survivor_id == duplicate_id:
-        raise AppError(status_code=422, code="VALIDATION_ERROR", message="Cannot merge ingredient into itself.")
+        raise AppError(
+            status_code=422, code="VALIDATION_ERROR", message="Cannot merge ingredient into itself."
+        )
     survivor = await db.get(CanonicalIngredient, survivor_id)
     duplicate = await db.get(CanonicalIngredient, duplicate_id)
     if survivor is None or duplicate is None:
@@ -109,18 +111,28 @@ async def merge_canonical_ingredients(
     survivor_id: UUID,
     duplicate_id: UUID,
 ) -> IngredientMergeRecord:
-    """Soft-merge duplicate CanonicalIngredient into survivor_id without touching CanonicalItems or lots."""
+    """Soft-merge duplicate CanonicalIngredient into survivor_id without touching CanonicalItems or
+    lots.
+    """
     if survivor_id == duplicate_id:
-        raise AppError(status_code=422, code="VALIDATION_ERROR", message="Cannot merge ingredient into itself.")
+        raise AppError(
+            status_code=422, code="VALIDATION_ERROR", message="Cannot merge ingredient into itself."
+        )
 
     survivor = await db.get(CanonicalIngredient, survivor_id)
     duplicate = await db.get(CanonicalIngredient, duplicate_id)
     if survivor is None or duplicate is None:
         raise AppError(status_code=404, code="NOT_FOUND", message="CanonicalIngredient not found.")
     if not survivor.is_active:
-        raise AppError(status_code=409, code="ALREADY_MERGED", message="Survivor ingredient is inactive.")
+        raise AppError(
+            status_code=409, code="ALREADY_MERGED", message="Survivor ingredient is inactive."
+        )
     if not duplicate.is_active:
-        raise AppError(status_code=409, code="ALREADY_MERGED", message="Duplicate ingredient was already merged.")
+        raise AppError(
+            status_code=409,
+            code="ALREADY_MERGED",
+            message="Duplicate ingredient was already merged.",
+        )
     if are_ingredients_incompatible(survivor.normalized_name, duplicate.normalized_name):
         raise AppError(
             status_code=409,

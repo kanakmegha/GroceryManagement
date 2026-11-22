@@ -1,4 +1,6 @@
-"""Phase 4D: Tests for ingredient mapping confirmation, rejection, isolation, and remaining-stock totals."""
+"""Phase 4D: Tests for ingredient mapping confirmation, rejection, isolation, and remaining-stock
+totals.
+"""
 
 from __future__ import annotations
 
@@ -8,10 +10,13 @@ from uuid import UUID
 
 import httpx
 import pytest
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.modules.inventory.models import CanonicalIngredient, CanonicalItem, IngredientMapping, InventoryLot
+from app.modules.inventory.models import (
+    CanonicalItem,
+    IngredientMapping,
+    InventoryLot,
+)
 from app.modules.inventory.schemas import AdjustLotRequest
 from app.modules.inventory.service import adjust_lot
 from tests.conftest import EphemeralJWKSProvider
@@ -218,7 +223,9 @@ async def test_phase4d1_all_six_high_suggestions_and_rejection_loop_safety(
     jwks_provider: EphemeralJWKSProvider,
     temp_db_url: str,
 ) -> None:
-    """Verify all 6 HIGH-confidence suggestions, MEDIUM/LOW non-auto-confirm, and rejection non-recreation."""
+    """Verify all 6 HIGH-confidence suggestions, MEDIUM/LOW non-auto-confirm, and rejection
+    non-recreation.
+    """
     from app.modules.catalog.ingredient_mapping_service import resolve_or_suggest_mapping
 
     token = jwks_provider.make_token(sub="user_4d1", email="4d1@example.com", name="4D1 User")
@@ -235,7 +242,12 @@ async def test_phase4d1_all_six_high_suggestions_and_rejection_loop_safety(
         ("Arhar Dal", "Toor Dal", "g", Decimal("500.000")),
         ("BADAM", "Almonds", "g", Decimal("3750.000")),
         ("Chana Dal", "Chana Dal", "g", Decimal("9000.000")),
-        ("Eastern Chilli Powder - Perfect Colour, Smell & Taste 250 g Pouch", "Red Chilli Powder", "g", Decimal("1.000")),
+        (
+            "Eastern Chilli Powder - Perfect Colour, Smell & Taste 250 g Pouch",
+            "Red Chilli Powder",
+            "g",
+            Decimal("1.000"),
+        ),
         ("KHULA ATTA", "Whole Wheat Flour (Atta)", "g", Decimal("41000.000")),
         ("Milk", "Milk", "g", Decimal("1000.000")),
     ]

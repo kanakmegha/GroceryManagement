@@ -1,10 +1,11 @@
-"""Stage A & B: Input validation, PDF rendering, Image Quality Assessment (IQA), and adaptive OpenCV preprocessing."""
+"""Stage A & B: Input validation, PDF rendering, Image Quality Assessment (IQA), and adaptive
+OpenCV preprocessing.
+"""
 
 from __future__ import annotations
 
 import io
 from dataclasses import dataclass, field
-from typing import Any
 
 import cv2
 import numpy as np
@@ -138,9 +139,7 @@ def _rotate_bound(bgr: np.ndarray, angle_deg: float) -> np.ndarray:
     h, w = bgr.shape[:2]
     center = (w / 2.0, h / 2.0)
     m = cv2.getRotationMatrix2D(center, angle_deg, 1.0)
-    return cv2.warpAffine(
-        bgr, m, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE
-    )
+    return cv2.warpAffine(bgr, m, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
 
 
 def _compute_iqa(bgr: np.ndarray) -> ReceiptQualityReport:
@@ -180,7 +179,8 @@ def _compute_iqa(bgr: np.ndarray) -> ReceiptQualityReport:
         retake_reasons.append("Image appears blank or has almost no readable contrast.")
     elif blur_score < 12.0 or (blur_score < 22.0 and contrast_std < 26.0):
         retake_reasons.append(
-            f"Image is too blurry to read reliably (sharpness={blur_score:.1f}); hold steady and refocus."
+            f"Image is too blurry to read reliably (sharpness={blur_score:.1f}); hold "
+            "steady and refocus."
         )
 
     return ReceiptQualityReport(
@@ -202,7 +202,9 @@ def preprocess_receipt_image(image_bytes: bytes) -> PreprocessedImageResult:
     warnings: list[str] = []
 
     if len(image_bytes) > MAX_RECEIPT_BYTES:
-        raise ValueError(f"Receipt file exceeds maximum size of {MAX_RECEIPT_BYTES // (1024 * 1024)} MB.")
+        raise ValueError(
+            f"Receipt file exceeds maximum size of {MAX_RECEIPT_BYTES // (1024 * 1024)} MB."
+        )
 
     with Image.open(io.BytesIO(image_bytes)) as pil_img:
         pil_img = ImageOps.exif_transpose(pil_img)
@@ -227,7 +229,8 @@ def preprocess_receipt_image(image_bytes: bytes) -> PreprocessedImageResult:
 
     if report.glare_ratio > 0.18 and report.brightness_mean < 225.0:
         warnings.append(
-            f"High glare detected ({report.glare_ratio * 100:.0f}% of image); some text may need manual review."
+            f"High glare detected ({report.glare_ratio * 100:.0f}% of image); some text "
+            "may need manual review."
         )
 
     working = bgr.copy()
@@ -350,7 +353,9 @@ def extract_pdf_inputs(data: bytes) -> PdfExtractionResult:
     except Exception as exc:
         return PdfExtractionResult(
             is_digital=False,
-            warnings=[f"Malformed or unreadable PDF ({type(exc).__name__}); manual review required."],
+            warnings=[
+                f"Malformed or unreadable PDF ({type(exc).__name__}); manual review required."
+            ],
         )
 
     try:
@@ -383,7 +388,7 @@ def extract_pdf_inputs(data: bytes) -> PdfExtractionResult:
                 # Extract word-level boxes so adjacent table columns preserve distinct x-coordinates
                 words = page.get_text("words") or []
                 words.sort(key=lambda item: (round(float(item[1]) / ph, 3), float(item[0]) / pw))
-                for w_idx, w_item in enumerate(words):
+                for _w_idx, w_item in enumerate(words):
                     if len(w_item) < 5:
                         continue
                     x0, y0, x1, y1, word_txt = (

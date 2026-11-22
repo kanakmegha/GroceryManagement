@@ -40,13 +40,17 @@ CHEF_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "get_pantry_items",
-            "description": "List active, non-expired pantry items currently in this household's inventory.",
+            "description": (
+                "List active, non-expired pantry items currently in this household's inventory."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "category": {
                         "type": "string",
-                        "description": "Optional food category filter (e.g. dairy, vegetable, pulse).",
+                        "description": (
+                            "Optional food category filter (e.g. dairy, vegetable, pulse)."
+                        ),
                     }
                 },
                 "required": [],
@@ -57,7 +61,10 @@ CHEF_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "get_expiring_items",
-            "description": "List household pantry items expiring within the next N days, ordered soonest first.",
+            "description": (
+                "List household pantry items expiring within the next N days, ordered "
+                "soonest first."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -82,13 +89,17 @@ CHEF_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "get_recent_cooking_history",
-            "description": "Get recently planned or completed recipes for this household to avoid repetition.",
+            "description": (
+                "Get recently planned or completed recipes for this household to avoid repetition."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "limit": {
                         "type": "integer",
-                        "description": "Maximum number of recent recipes to return (1-20, default 8).",
+                        "description": (
+                            "Maximum number of recent recipes to return (1-20, default 8)."
+                        ),
                     }
                 },
                 "required": [],
@@ -99,7 +110,10 @@ CHEF_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "get_household_food_preferences",
-            "description": "Get dietary constraints, servings, meal type, and prep-time preferences for this request.",
+            "description": (
+                "Get dietary constraints, servings, meal type, and prep-time preferences "
+                "for this request."
+            ),
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -128,7 +142,9 @@ class ReadOnlyChefToolset:
         self._meal_type = meal_type
         self._max_prep_minutes = max_prep_minutes
 
-    async def execute_tool(self, name: str, raw_arguments: str | dict[str, Any] | None) -> dict[str, Any]:
+    async def execute_tool(
+        self, name: str, raw_arguments: str | dict[str, Any] | None
+    ) -> dict[str, Any]:
         """Validate arguments and dispatch to an allowlisted read-only tool."""
         if isinstance(raw_arguments, str):
             try:

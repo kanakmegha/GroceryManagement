@@ -12,9 +12,9 @@ from app.core.errors import RequestIdMiddleware, register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.security import JWKSCache
 from app.modules.auth.router import router as auth_router
-from app.modules.experimental_ocr.router import router as experimental_ocr_router
 from app.modules.cooking.meals_router import router as meals_router
 from app.modules.cooking.router import router as cooking_router
+from app.modules.experimental_ocr.router import router as experimental_ocr_router
 from app.modules.households.router import router as households_router
 from app.modules.insights.router import router as insights_router
 from app.modules.inventory.router import catalog_router

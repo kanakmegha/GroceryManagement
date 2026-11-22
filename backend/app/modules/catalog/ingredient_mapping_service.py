@@ -19,7 +19,9 @@ from app.core.errors import AppError
 from app.modules.inventory.models import CanonicalIngredient, CanonicalItem, IngredientMapping
 
 ConfidenceTier = Literal["high", "medium", "low"]
-ResolutionStatus = Literal["reused_confirmed", "reused_suggested", "auto_mapped", "suggested", "unmapped"]
+ResolutionStatus = Literal[
+    "reused_confirmed", "reused_suggested", "auto_mapped", "suggested", "unmapped"
+]
 
 # Heuristic thresholds (not calibrated probabilities)
 HIGH_CONFIDENCE_THRESHOLD = Decimal("0.900")
@@ -28,15 +30,66 @@ MEDIUM_CONFIDENCE_THRESHOLD = Decimal("0.650")
 # Common brand & pack-size noise stripped during brand-agnostic matching.
 # Brand is NEVER a mandatory attribute: unknown brands still match via ingredient tokens.
 _KNOWN_BRAND_TOKENS = {
-    "amul", "aavin", "nandini", "mother", "dairy", "heritage", "milky", "mist",
-    "country", "delight", "akshayakalpa", "nestle", "britannia", "gowardhan",
-    "india", "gate", "daawat", "kohinoor", "fortune", "saffola", "dhara",
-    "sundrop", "gold", "winner", "svs", "idhayam", "mantra", "organic",
-    "tattva", "tata", "sampann", "aashirvaad", "pillsbury", "shakti", "bhog",
-    "everest", "mdh", "catch", "mtr", "aachi", "sakthi", "bb", "royal",
-    "popular", "fresho", "super", "choice", "local", "brand", "fresh", "pure",
-    "classic", "premium", "select", "special", "deluxe", "taaza", "shakti",
-    "udhaiyam", "eastern", "prabhat", "fortune",
+    "amul",
+    "aavin",
+    "nandini",
+    "mother",
+    "dairy",
+    "heritage",
+    "milky",
+    "mist",
+    "country",
+    "delight",
+    "akshayakalpa",
+    "nestle",
+    "britannia",
+    "gowardhan",
+    "india",
+    "gate",
+    "daawat",
+    "kohinoor",
+    "fortune",
+    "saffola",
+    "dhara",
+    "sundrop",
+    "gold",
+    "winner",
+    "svs",
+    "idhayam",
+    "mantra",
+    "organic",
+    "tattva",
+    "tata",
+    "sampann",
+    "aashirvaad",
+    "pillsbury",
+    "shakti",
+    "bhog",
+    "everest",
+    "mdh",
+    "catch",
+    "mtr",
+    "aachi",
+    "sakthi",
+    "bb",
+    "royal",
+    "popular",
+    "fresho",
+    "super",
+    "choice",
+    "local",
+    "brand",
+    "fresh",
+    "pure",
+    "classic",
+    "premium",
+    "select",
+    "special",
+    "deluxe",
+    "taaza",
+    "udhaiyam",
+    "eastern",
+    "prabhat",
 }
 
 _PACK_NOISE_RE = re.compile(
@@ -45,8 +98,31 @@ _PACK_NOISE_RE = re.compile(
 )
 
 # Tokens that indicate a processed/derived form that must NOT map to raw whole ingredients
-_FLOUR_OR_POWDER_TOKENS = {"flour", "atta", "maida", "besan", "powder", "starch", "batter", "mix", "flakes", "poha"}
-_PLANT_OR_ALT_MILK_PREFIXES = {"coconut", "almond", "soy", "soya", "oat", "oats", "cashew", "rice", "condensed", "buttermilk", "milkshake"}
+_FLOUR_OR_POWDER_TOKENS = {
+    "flour",
+    "atta",
+    "maida",
+    "besan",
+    "powder",
+    "starch",
+    "batter",
+    "mix",
+    "flakes",
+    "poha",
+}
+_PLANT_OR_ALT_MILK_PREFIXES = {
+    "coconut",
+    "almond",
+    "soy",
+    "soya",
+    "oat",
+    "oats",
+    "cashew",
+    "rice",
+    "condensed",
+    "buttermilk",
+    "milkshake",
+}
 
 # Variant descriptors preserved on the product/suggestion without splitting generic Milk
 _MILK_VARIANT_TOKENS = {
@@ -254,17 +330,28 @@ def _passes_identity_guards(raw_name: str, candidate_norm: str) -> bool:
     raw_tokens = set(_clean_tokens(raw_name, strip_brands=False))
 
     # 1. Rice Flour / Atta / Powder must NEVER map to whole rice or whole grain
-    if raw_tokens & _FLOUR_OR_POWDER_TOKENS:
-        if candidate_norm in {"basmati_rice", "sona_masoori_rice", "idli_rice", "rolled_oats"}:
-            return False
+    if (raw_tokens & _FLOUR_OR_POWDER_TOKENS) and candidate_norm in {
+        "basmati_rice",
+        "sona_masoori_rice",
+        "idli_rice",
+        "rolled_oats",
+    }:
+        return False
 
-    # 2. Coconut Milk / Almond Milk / Soy Milk / Oat Milk / Milk Chocolate must NEVER map to dairy Milk
+    # 2. Coconut Milk / Almond Milk / Soy Milk / Oat Milk / Milk Chocolate must NEVER map to dairy
+    # Milk
     if candidate_norm == "milk":
         if any(f"{prefix} milk" in lowered for prefix in _PLANT_OR_ALT_MILK_PREFIXES):
             return False
         if any(
             conf_phrase in lowered
-            for conf_phrase in ("milk powder", "butter milk", "milk chocolate", "ice cream", "dairy milk")
+            for conf_phrase in (
+                "milk powder",
+                "butter milk",
+                "milk chocolate",
+                "ice cream",
+                "dairy milk",
+            )
         ):
             return False
 
@@ -278,7 +365,9 @@ def _passes_identity_guards(raw_name: str, candidate_norm: str) -> bool:
             return False
         if candidate_norm == "idli_rice" and "idli" not in raw_tokens:
             return False
-        if candidate_norm == "sona_masoori_rice" and not ({"sona", "masoori", "masuri"} & raw_tokens):
+        if candidate_norm == "sona_masoori_rice" and not (
+            {"sona", "masoori", "masuri"} & raw_tokens
+        ):
             return False
 
     # 5. Oils must specify the oilseed/fat identity
@@ -286,10 +375,7 @@ def _passes_identity_guards(raw_name: str, candidate_norm: str) -> bool:
         return False
     if candidate_norm == "mustard_oil" and "mustard" not in raw_tokens:
         return False
-    if candidate_norm == "rice_bran_oil" and not ({"rice", "bran"} <= raw_tokens):
-        return False
-
-    return True
+    return not (candidate_norm == "rice_bran_oil" and not ({"rice", "bran"} <= raw_tokens))
 
 
 def score_ingredient_candidates(
@@ -342,7 +428,8 @@ def score_ingredient_candidates(
     if best_phrase_match is not None:
         phrase_len, ing = best_phrase_match
         # If there are extra unrecognized non-brand modifiers alongside a 1-word match,
-        # treat multi-modifier cases carefully: category match + 1-word core = HIGH if <=1 extra token,
+        # treat multi-modifier cases carefully: category match + 1-word core = HIGH if <=1 extra
+        # token,
         # otherwise MEDIUM for user confirmation.
         extra_tokens = max(0, len(tokens) - phrase_len)
         if extra_tokens <= 1 or phrase_len >= 2:
@@ -514,9 +601,7 @@ async def resolve_or_suggest_mapping(
         if top_var_id:
             sug_ing = (
                 await db.execute(
-                    select(CanonicalIngredient).where(
-                        CanonicalIngredient.variant_id == top_var_id
-                    )
+                    select(CanonicalIngredient).where(CanonicalIngredient.variant_id == top_var_id)
                 )
             ).scalar_one_or_none()
             if sug_ing is not None:
@@ -533,7 +618,11 @@ async def resolve_or_suggest_mapping(
                 )
 
     ingredients = list(
-        (await db.execute(select(CanonicalIngredient).where(CanonicalIngredient.is_active.is_(True))))
+        (
+            await db.execute(
+                select(CanonicalIngredient).where(CanonicalIngredient.is_active.is_(True))
+            )
+        )
         .scalars()
         .all()
     )
@@ -598,7 +687,11 @@ async def confirm_ingredient_mapping(
     item = await db.get(CanonicalItem, canonical_item_id)
     if item is None:
         raise AppError(status_code=404, code="NOT_FOUND", message="CanonicalItem not found.")
-    if household_id is not None and item.household_id is not None and item.household_id != household_id:
+    if (
+        household_id is not None
+        and item.household_id is not None
+        and item.household_id != household_id
+    ):
         raise AppError(
             status_code=403,
             code="FORBIDDEN",
@@ -718,97 +811,12 @@ async def backfill_canonical_item_mappings(
         .scalars()
         .all()
     )
-    # Phase 7.2: Central authoritative IngredientResolver first
-    from app.modules.catalog.ingredient_catalogue_sync import sync_catalogue_to_db
-    from app.modules.catalog.ingredient_resolver import IngredientResolver
-
-    resolver = IngredientResolver()
-    res = await resolver.resolve_for_household(
-        db,
-        household_id=household_id,
-        receipt_text=canonical_item.name,
-        canonical_item_id=canonical_item.id,
-    )
-    if res.variant_id and not res.requires_review:
-        target_ing = (
-            await db.get(CanonicalIngredient, res.canonical_ingredient_id)
-            if res.canonical_ingredient_id is not None
-            else None
-        )
-        if target_ing is None:
-            await sync_catalogue_to_db(db)
-            target_ing = (
-                await db.execute(
-                    select(CanonicalIngredient).where(
-                        CanonicalIngredient.variant_id == res.variant_id
-                    )
-                )
-            ).scalar_one_or_none()
-        if target_ing is not None:
-            is_learned = res.match_source in (
-                "confirmed_product_mapping",
-                "household_learned_alias",
-            )
-            if auto_map_high_confidence:
-                mapping = IngredientMapping(
-                    household_id=household_id,
-                    canonical_item_id=canonical_item.id,
-                    canonical_ingredient_id=target_ing.id,
-                    matching_confidence=res.confidence,
-                    mapping_source="user_confirmed" if is_learned else "catalogue",
-                    user_confirmed=is_learned,
-                )
-                db.add(mapping)
-                await db.flush()
-                return MappingResolution(
-                    canonical_item_id=canonical_item.id,
-                    status="auto_mapped",
-                    tier="high",
-                    mapping=mapping,
-                    suggested_ingredient=target_ing,
-                    matching_confidence=res.confidence,
-                    mapping_source=mapping.mapping_source,
-                    user_confirmed=is_learned,
-                    detected_variant=res.variant_name or detected_variant,
-                    reason=res.reason,
-                )
-            return MappingResolution(
-                canonical_item_id=canonical_item.id,
-                status="suggested",
-                tier="high",
-                suggested_ingredient=target_ing,
-                matching_confidence=res.confidence,
-                mapping_source="catalogue",
-                user_confirmed=False,
-                detected_variant=res.variant_name or detected_variant,
-                reason=res.reason,
-            )
-
-    if res.requires_review and res.suggestions:
-        top_var_id = res.suggestions[0].get("variant_id")
-        if top_var_id:
-            sug_ing = (
-                await db.execute(
-                    select(CanonicalIngredient).where(
-                        CanonicalIngredient.variant_id == top_var_id
-                    )
-                )
-            ).scalar_one_or_none()
-            if sug_ing is not None:
-                return MappingResolution(
-                    canonical_item_id=canonical_item.id,
-                    status="suggested",
-                    tier="medium",
-                    suggested_ingredient=sug_ing,
-                    matching_confidence=Decimal("0.700"),
-                    mapping_source="classifier_v2",
-                    user_confirmed=False,
-                    detected_variant=detected_variant,
-                    reason=res.reason,
-                )
-
     ingredients = list(
-        (await db.execute(select(CanonicalIngredient).where(CanonicalIngredient.is_active.is_(True))))
+        (
+            await db.execute(
+                select(CanonicalIngredient).where(CanonicalIngredient.is_active.is_(True))
+            )
+        )
         .scalars()
         .all()
     )

@@ -45,18 +45,24 @@ router = APIRouter(prefix="/inventory", tags=["inventory"])
 catalog_router = APIRouter(prefix="/catalog", tags=["catalog"])
 
 
-@router.patch("/ingredients/{canonical_ingredient_id}", response_model=UpdateIngredientPantryItemResponse)
+@router.patch(
+    "/ingredients/{canonical_ingredient_id}", response_model=UpdateIngredientPantryItemResponse
+)
 async def update_pantry_ingredient_item(
     canonical_ingredient_id: UUID,
     payload: UpdateIngredientPantryItemRequest,
     ctx: HouseholdContext = Depends(get_household_context),
     db: AsyncSession = Depends(get_db),
 ) -> UpdateIngredientPantryItemResponse:
-    """Directly edit a confirmed ingredient's display name and/or aggregate stock via StockLedger."""
+    """Directly edit a confirmed ingredient's display name and/or aggregate stock via
+    StockLedger.
+    """
     import re
     from datetime import UTC, datetime
     from decimal import ROUND_HALF_UP, Decimal
+
     from sqlalchemy import func, select
+
     from app.core.errors import AppError
     from app.modules.inventory.ingredient_aggregation_service import convert_to_target_unit
     from app.modules.inventory.models import (
@@ -100,7 +106,9 @@ async def update_pantry_ingredient_item(
     if payload.name is not None:
         candidate_name = payload.name.strip()
         if not candidate_name:
-            raise AppError(status_code=422, code="VALIDATION_ERROR", message="Ingredient name cannot be empty.")
+            raise AppError(
+                status_code=422, code="VALIDATION_ERROR", message="Ingredient name cannot be empty."
+            )
         if candidate_name.lower() != ing.name.lower():
             candidate_norm = re.sub(r"[^a-z0-9]+", "_", candidate_name.lower()).strip("_")
             dup = (
@@ -135,22 +143,31 @@ async def update_pantry_ingredient_item(
                     InventoryLot.lot_status == "active",
                     InventoryLot.remaining_qty > 0,
                 )
-                .order_by(InventoryLot.expires_on.asc().nullslast(), InventoryLot.purchased_at.asc(), InventoryLot.id.asc())
+                .order_by(
+                    InventoryLot.expires_on.asc().nullslast(),
+                    InventoryLot.purchased_at.asc(),
+                    InventoryLot.id.asc(),
+                )
             )
         )
         .scalars()
         .all()
     )
-    active_lots = [l for l in lots if not (l.expires_on is not None and l.expires_on < today_utc)]
+    active_lots = [
+        lot for lot in lots if not (lot.expires_on is not None and lot.expires_on < today_utc)
+    ]
 
     current_std_total = Decimal("0.000")
-    for l in active_lots:
-        conv, _ = convert_to_target_unit(l.remaining_qty, l.base_unit, ing.standard_unit)
+    for lot in active_lots:
+        conv, _ = convert_to_target_unit(lot.remaining_qty, lot.base_unit, ing.standard_unit)
         if conv is None:
             raise AppError(
                 status_code=422,
                 code="INCOMPATIBLE_UNIT",
-                message=f"Existing lot unit '{l.base_unit}' is incompatible with '{ing.standard_unit}'.",
+                message=(
+                    f"Existing lot unit '{lot.base_unit}' is incompatible with "
+                    f"'{ing.standard_unit}'."
+                ),
             )
         current_std_total += conv
     current_std_total = current_std_total.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
@@ -158,14 +175,17 @@ async def update_pantry_ingredient_item(
     target_std_qty: Decimal | None = None
     if payload.target_quantity is not None:
         req_unit = (payload.unit or ing.standard_unit).strip().lower()
-        conv_target, _ = convert_to_target_unit(payload.target_quantity, req_unit, ing.standard_unit)
+        conv_target, _ = convert_to_target_unit(
+            payload.target_quantity, req_unit, ing.standard_unit
+        )
         if conv_target is None:
             raise AppError(
                 status_code=422,
                 code="INCOMPATIBLE_UNIT",
                 message=(
                     f"Cannot convert '{req_unit}' to '{ing.standard_unit}' without a known "
-                    "package size or conversion factor. Choose a compatible unit or perform an explicit stock correction."
+                    "package size or conversion factor. Choose a compatible unit or perform "
+                    "an explicit stock correction."
                 ),
             )
         target_std_qty = conv_target.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
@@ -178,7 +198,9 @@ async def update_pantry_ingredient_item(
 
     adjusted_count = 0
     if target_std_qty is not None and target_std_qty != current_std_total:
-        diff = (target_std_qty - current_std_total).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+        diff = (target_std_qty - current_std_total).quantize(
+            Decimal("0.001"), rounding=ROUND_HALF_UP
+        )
         if not active_lots:
             raise AppError(
                 status_code=422,
@@ -186,13 +208,15 @@ async def update_pantry_ingredient_item(
                 message="No active inventory lot is available to adjust.",
             )
         if diff > Decimal("0"):
-            newest = max(active_lots, key=lambda l: (l.purchased_at, str(l.id)))
+            newest = max(active_lots, key=lambda lot: (lot.purchased_at, str(lot.id)))
             lot_delta, _ = convert_to_target_unit(diff, ing.standard_unit, newest.base_unit)
             if lot_delta is None:
                 raise AppError(
                     status_code=422,
                     code="INCOMPATIBLE_UNIT",
-                    message=f"Cannot convert '{ing.standard_unit}' to lot unit '{newest.base_unit}'.",
+                    message=(
+                        f"Cannot convert '{ing.standard_unit}' to lot unit '{newest.base_unit}'."
+                    ),
                 )
             await adjust_lot(
                 db,
@@ -208,24 +232,32 @@ async def update_pantry_ingredient_item(
             adjusted_count = 1
         else:
             remaining_to_deduct = -diff
-            for l in active_lots:
+            for lot in active_lots:
                 if remaining_to_deduct <= Decimal("0"):
                     break
-                lot_in_std, _ = convert_to_target_unit(l.remaining_qty, l.base_unit, ing.standard_unit)
+                lot_in_std, _ = convert_to_target_unit(
+                    lot.remaining_qty, lot.base_unit, ing.standard_unit
+                )
                 if lot_in_std is None or lot_in_std <= Decimal("0"):
                     continue
-                deduct_std = min(lot_in_std, remaining_to_deduct).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+                deduct_std = min(lot_in_std, remaining_to_deduct).quantize(
+                    Decimal("0.001"), rounding=ROUND_HALF_UP
+                )
                 if deduct_std <= Decimal("0"):
                     continue
-                deduct_lot_unit, _ = convert_to_target_unit(deduct_std, ing.standard_unit, l.base_unit)
+                deduct_lot_unit, _ = convert_to_target_unit(
+                    deduct_std, ing.standard_unit, lot.base_unit
+                )
                 if deduct_lot_unit is None or deduct_lot_unit <= Decimal("0"):
                     continue
-                deduct_lot_q = min(l.remaining_qty, deduct_lot_unit).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+                deduct_lot_q = min(lot.remaining_qty, deduct_lot_unit).quantize(
+                    Decimal("0.001"), rounding=ROUND_HALF_UP
+                )
                 await adjust_lot(
                     db,
                     household_id=ctx.household.id,
                     actor_user_id=ctx.user.id,
-                    lot_id=l.id,
+                    lot_id=lot.id,
                     payload=AdjustLotRequest(
                         event_type="ADJUSTMENT_OUT",
                         quantity_delta=-deduct_lot_q,
@@ -255,8 +287,11 @@ async def update_pantry_product_name(
     ctx: HouseholdContext = Depends(get_household_context),
     db: AsyncSession = Depends(get_db),
 ) -> UpdateCanonicalItemNameResponse:
-    """Update a household product's display name without modifying raw OCR or inventory quantities."""
+    """Update a household product's display name without modifying raw OCR or inventory
+    quantities.
+    """
     from sqlalchemy import select
+
     from app.core.errors import AppError
     from app.modules.catalog.product_naming_service import standardize_product_name
     from app.modules.inventory.models import CanonicalItem
@@ -284,6 +319,7 @@ async def get_item_price_history(
 ) -> dict:
     """Return normalized comparable unit price history (₹/kg, ₹/L, ₹/pc) for a canonical item."""
     from sqlalchemy import or_, select
+
     from app.core.errors import AppError
     from app.modules.inventory.models import CanonicalItem
     from app.modules.purchases.models import Purchase, PurchaseItem
@@ -396,15 +432,20 @@ async def list_canonical_ingredients_catalog(
     db: AsyncSession = Depends(get_db),
 ) -> CanonicalIngredientsListResponse:
     from sqlalchemy import select
+
     from app.modules.inventory.models import CanonicalIngredient
 
     rows = (
-        await db.execute(
-            select(CanonicalIngredient)
-            .where(CanonicalIngredient.is_active.is_(True))
-            .order_by(CanonicalIngredient.name.asc())
+        (
+            await db.execute(
+                select(CanonicalIngredient)
+                .where(CanonicalIngredient.is_active.is_(True))
+                .order_by(CanonicalIngredient.name.asc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return CanonicalIngredientsListResponse(
         items=[
             CanonicalIngredientOptionOut(
@@ -456,6 +497,7 @@ async def reject_pantry_ingredient_mapping(
     db: AsyncSession = Depends(get_db),
 ) -> RejectIngredientMappingResponse:
     from sqlalchemy import delete
+
     from app.modules.inventory.models import IngredientMapping
 
     res = await db.execute(
@@ -582,6 +624,7 @@ async def get_catalog_duplicates_dry_run(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     from dataclasses import asdict
+
     from app.modules.catalog.duplicate_audit import run_dry_run_duplicate_audit
 
     report = await run_dry_run_duplicate_audit(db, household_id=ctx.household.id)

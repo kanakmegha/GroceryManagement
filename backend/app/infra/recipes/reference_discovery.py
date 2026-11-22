@@ -173,11 +173,7 @@ async def _is_allowed_by_robots(
 
 def _tokenize(text: str) -> set[str]:
     stop = {"with", "and", "the", "for", "easy", "quick", "recipe", "bowl", "style"}
-    return {
-        tok
-        for tok in re.findall(r"[a-z]{3,}", text.lower())
-        if tok not in stop
-    }
+    return {tok for tok in re.findall(r"[a-z]{3,}", text.lower()) if tok not in stop}
 
 
 def _validate_recipe_page(
@@ -215,9 +211,7 @@ def _validate_recipe_page(
 
     searchable_text = f"{display_title.lower()} {ld_ingredients_text} {parser.body_text}"
     matched_ingredients = [
-        ing
-        for ing in key_ingredients
-        if ing.strip() and ing.strip().lower() in searchable_text
+        ing for ing in key_ingredients if ing.strip() and ing.strip().lower() in searchable_text
     ]
 
     # Require either meaningful title overlap or multiple matched ingredients + recipe context

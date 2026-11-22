@@ -1,3 +1,4 @@
+from contextlib import suppress
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
@@ -31,7 +32,9 @@ def _to_plan_out(
     normalized_ings = [
         {
             **ing,
-            "line_id": str(ing.get("line_id") or f"{plan.id}:{ing.get('canonical_item_id', '')}:{idx}"),
+            "line_id": str(
+                ing.get("line_id") or f"{plan.id}:{ing.get('canonical_item_id', '')}:{idx}"
+            ),
             "name": (
                 str(ing.get("name") or "").strip()
                 or names_map.get(str(ing.get("canonical_item_id", "")), "")
@@ -48,23 +51,21 @@ def _to_plan_out(
     return out
 
 
-async def _load_canonical_name_map(
-    db: AsyncSession, plans: list[CookingPlan]
-) -> dict[str, str]:
+async def _load_canonical_name_map(db: AsyncSession, plans: list[CookingPlan]) -> dict[str, str]:
     from app.modules.inventory.models import CanonicalItem
 
     cids: set[UUID] = set()
     for p in plans:
         for ing in p.ingredients or []:
             if not str(ing.get("name") or "").strip():
-                try:
+                with suppress(KeyError, ValueError, TypeError):
                     cids.add(UUID(str(ing["canonical_item_id"])))
-                except (KeyError, ValueError, TypeError):
-                    pass
     if not cids:
         return {}
     rows = (
-        await db.execute(select(CanonicalItem.id, CanonicalItem.name).where(CanonicalItem.id.in_(cids)))
+        await db.execute(
+            select(CanonicalItem.id, CanonicalItem.name).where(CanonicalItem.id.in_(cids))
+        )
     ).all()
     return {str(cid): str(cname) for cid, cname in rows}
 
@@ -132,8 +133,9 @@ async def list_cooking_plans(
         base_where.append(CookingPlan.status == status_filter)
 
     total = int(
-        (await db.execute(select(func.count()).select_from(CookingPlan).where(*base_where)))
-        .scalar_one()
+        (
+            await db.execute(select(func.count()).select_from(CookingPlan).where(*base_where))
+        ).scalar_one()
     )
     stmt = (
         select(CookingPlan)
@@ -147,9 +149,7 @@ async def list_cooking_plans(
     return [_to_plan_out(row, names_map) for row in rows], total
 
 
-async def get_cooking_plan(
-    db: AsyncSession, household_id: UUID, plan_id: UUID
-) -> CookingPlanOut:
+async def get_cooking_plan(db: AsyncSession, household_id: UUID, plan_id: UUID) -> CookingPlanOut:
     stmt = select(CookingPlan).where(
         CookingPlan.id == plan_id, CookingPlan.household_id == household_id
     )
@@ -223,12 +223,8 @@ async def complete_cooking_plan(
             actual_qty = Decimal("0")
             waste_qty = Decimal("0")
         else:
-            actual_qty = overrides_by_line.get(
-                line_id, overrides_by_cid.get(cid_str, planned_qty)
-            )
-            waste_qty = waste_by_line.get(
-                line_id, waste_by_cid.get(cid_str, Decimal("0"))
-            )
+            actual_qty = overrides_by_line.get(line_id, overrides_by_cid.get(cid_str, planned_qty))
+            waste_qty = waste_by_line.get(line_id, waste_by_cid.get(cid_str, Decimal("0")))
 
         if actual_qty > Decimal("0"):
             deductions = await allocate_fefo(
@@ -390,24 +386,30 @@ async def list_meal_history(
     from collections import Counter
 
     all_rows = (
-        await db.execute(
-            select(MealHistory)
-            .where(MealHistory.household_id == household_id)
-            .order_by(MealHistory.cooked_at.desc())
+        (
+            await db.execute(
+                select(MealHistory)
+                .where(MealHistory.household_id == household_id)
+                .order_by(MealHistory.cooked_at.desc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     title_counts = Counter(r.recipe_title for r in all_rows)
     frequently_cooked = [t for t, c in title_counts.most_common(10) if c >= 2]
     favourite_meals: list[str] = []
     disliked_meals: list[str] = []
     for r in all_rows:
-        if (r.rating is not None and r.rating >= 4) or r.would_make_again is True:
-            if r.recipe_title not in favourite_meals:
-                favourite_meals.append(r.recipe_title)
-        if (r.rating is not None and r.rating <= 2) or r.would_make_again is False:
-            if r.recipe_title not in disliked_meals:
-                disliked_meals.append(r.recipe_title)
+        if (
+            (r.rating is not None and r.rating >= 4) or r.would_make_again is True
+        ) and r.recipe_title not in favourite_meals:
+            favourite_meals.append(r.recipe_title)
+        if (
+            (r.rating is not None and r.rating <= 2) or r.would_make_again is False
+        ) and r.recipe_title not in disliked_meals:
+            disliked_meals.append(r.recipe_title)
 
     filtered: list[MealHistory] = []
     for r in all_rows:

@@ -146,6 +146,7 @@ async def test_phase7_6_recommendations_and_ai_recipe_validation_and_cooked_feed
         ],
         {"reply": "Here is an idea.", "provider_status": "live", "model": "test-model"},
     )
+
     async def _fake_invoke(*args, **kwargs):
         return fake_ai_payload
 

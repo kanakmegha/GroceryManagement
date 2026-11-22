@@ -1,5 +1,4 @@
 import hashlib
-import inspect
 import re
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -105,7 +104,9 @@ _PREPARED_DISH_HINTS = (
     "sandwich",
     "curry",
 )
-_GROCERY_UNIT_HINTS = re.compile(r"\b\d+(?:\.\d+)?\s*(?:kg|g|gm|gms|ml|l|ltr|ltrs|dozen|doz|pack|pkt)\b", re.IGNORECASE)
+_GROCERY_UNIT_HINTS = re.compile(
+    r"\b\d+(?:\.\d+)?\s*(?:kg|g|gm|gms|ml|l|ltr|ltrs|dozen|doz|pack|pkt)\b", re.IGNORECASE
+)
 
 
 def _classify_receipt_and_inventory_eligibility(
@@ -113,22 +114,34 @@ def _classify_receipt_and_inventory_eligibility(
     item_names: list[str],
     raw_text: str,
 ) -> tuple[str, list[bool], list[str]]:
-    """Classify receipt category ('restaurant' vs 'grocery') and per-item inventory tracking eligibility."""
+    """Classify receipt category ('restaurant' vs 'grocery') and per-item inventory tracking
+    eligibility.
+    """
     m_lower = (merchant_name or "").lower()
     raw_lower = (raw_text or "").lower()
     is_grocery_merchant = any(
         h in m_lower
-        for h in ("mart", "fresh", "kirana", "grocery", "supermarket", "basket", "dairy", "vegetable", "fruit", "bazaar", "retail", "store")
-    )
-    is_restaurant = (
-        not is_grocery_merchant
-        and (
-            any(h in m_lower for h in _RESTAURANT_MERCHANT_HINTS)
-            or "table no" in raw_lower
-            or "cashier:" in raw_lower
-            or "dine in" in raw_lower
-            or "pick up" in raw_lower
+        for h in (
+            "mart",
+            "fresh",
+            "kirana",
+            "grocery",
+            "supermarket",
+            "basket",
+            "dairy",
+            "vegetable",
+            "fruit",
+            "bazaar",
+            "retail",
+            "store",
         )
+    )
+    is_restaurant = not is_grocery_merchant and (
+        any(h in m_lower for h in _RESTAURANT_MERCHANT_HINTS)
+        or "table no" in raw_lower
+        or "cashier:" in raw_lower
+        or "dine in" in raw_lower
+        or "pick up" in raw_lower
     )
     dish_hits = sum(
         1 for name in item_names if any(dh in name.lower() for dh in _PREPARED_DISH_HINTS)
@@ -152,12 +165,14 @@ def _classify_receipt_and_inventory_eligibility(
             eligibility.append(False)
             if not is_restaurant:
                 cls_warnings.append(
-                    f"'{name}' was marked budget-only; enable 'Add to Kitchen Inventory' if it is a pantry item."
+                    f"'{name}' was marked budget-only; enable 'Add to Kitchen Inventory' "
+                    "if it is a pantry item."
                 )
         elif is_prepared_dish and not has_grocery_pack:
             eligibility.append(False)
             cls_warnings.append(
-                f"'{name}' was marked budget-only; enable 'Add to Kitchen Inventory' if it is a pantry item."
+                f"'{name}' was marked budget-only; enable 'Add to Kitchen Inventory' if "
+                "it is a pantry item."
             )
         else:
             eligibility.append(True)
@@ -228,7 +243,9 @@ async def _resolve_canonical_item_id(
             .where(
                 CanonicalItem.slug == slug,
                 CanonicalItem.is_active.is_(True),
-                or_(CanonicalItem.household_id == household_id, CanonicalItem.household_id.is_(None)),
+                or_(
+                    CanonicalItem.household_id == household_id, CanonicalItem.household_id.is_(None)
+                ),
             )
             .order_by(CanonicalItem.household_id.is_(None).asc())
         )
@@ -284,9 +301,7 @@ async def create_ocr_draft(
 
     merchant_name = merchant_name_override or ocr_result.get("merchant_name")
     raw_purchased_on = (
-        purchased_on_override
-        or ocr_result.get("purchased_on")
-        or ocr_result.get("receipt_date")
+        purchased_on_override or ocr_result.get("purchased_on") or ocr_result.get("receipt_date")
     )
     if isinstance(raw_purchased_on, str):
         purchased_on = parse_flexible_date(raw_purchased_on) or _utcnow().date()
@@ -499,14 +514,8 @@ async def _build_ocr_purchase_items(
             except ValueError:
                 norm_qty, base_unit = Decimal("1.000"), "pcs"
         else:
-            raw_qty = (
-                _extract_attr(raw_item, "qty")
-                or _extract_attr(raw_item, "quantity")
-                or 1
-            )
-            raw_unit = str(
-                _extract_attr(raw_item, "unit") or base_unit_attr or "pcs"
-            )
+            raw_qty = _extract_attr(raw_item, "qty") or _extract_attr(raw_item, "quantity") or 1
+            raw_unit = str(_extract_attr(raw_item, "unit") or base_unit_attr or "pcs")
             try:
                 norm_qty, base_unit = resolve_purchase_measurement(
                     raw_qty,
@@ -545,7 +554,8 @@ async def _build_ocr_purchase_items(
             cls_res.matched_canonical_name
             if cls_res.matched_canonical_name
             and cls_res.confidence >= 0.85
-            and cls_res.matching_method in {"user_alias", "exact_canonical", "exact_alias", "normalized_token"}
+            and cls_res.matching_method
+            in {"user_alias", "exact_canonical", "exact_alias", "normalized_token"}
             else None
         )
         canonical_id, confidence = await _resolve_canonical_item_id(
@@ -583,8 +593,7 @@ async def _build_ocr_purchase_items(
             merged_warnings.append(cls_res.review_reason)
         if not qty_price_check.is_valid and qty_price_check.message:
             merged_warnings.append(f"quantity_price_mismatch: {qty_price_check.message}")
-            track_inventory = False
-            budget_treatment = "requires_user_review"
+            track_flag = False
         item_conf = _extract_attr(raw_item, "confidence")
 
         from app.modules.purchases.draft_resolution import evaluate_draft_item_resolution
@@ -603,7 +612,8 @@ async def _build_ocr_purchase_items(
             line_total_paise=line_total_paise,
             discount_paise=max(0, int(_extract_attr(raw_item, "discount_paise") or 0)),
             tax_paise=max(0, int(line_tax_paise or 0)),
-            track_inventory=track_flag or (
+            track_inventory=track_flag
+            or (
                 cls_res.classification_status not in {"non_food", "prepared_meal"}
                 and not (idx < len(item_track_flags) and not item_track_flags[idx])
             ),
@@ -611,7 +621,8 @@ async def _build_ocr_purchase_items(
         )
         effective_display_name = (
             draft_res.standardized_name
-            if draft_res.standardized_name and draft_res.ingredient_confidence_tier in {"HIGH", "MEDIUM"}
+            if draft_res.standardized_name
+            and draft_res.ingredient_confidence_tier in {"HIGH", "MEDIUM"}
             else display_name
         )
         if (
@@ -628,12 +639,15 @@ async def _build_ocr_purchase_items(
             raw_text=item_raw_text,
             canonical_item_id=canonical_id,
             display_name=effective_display_name,
-            normalized_name=_extract_attr(raw_item, "normalized_name") or cls_res.normalized_name or effective_display_name.lower(),
+            normalized_name=_extract_attr(raw_item, "normalized_name")
+            or cls_res.normalized_name
+            or effective_display_name.lower(),
             brand=_extract_attr(raw_item, "brand") or cls_res.extracted_brand,
             variant=_extract_attr(raw_item, "variant") or draft_res.standardized_name,
             pack_size=_extract_attr(raw_item, "pack_size") or cls_res.extracted_pack_size,
             category=category,
-            secondary_category=_extract_attr(raw_item, "secondary_category") or cls_res.secondary_category,
+            secondary_category=_extract_attr(raw_item, "secondary_category")
+            or cls_res.secondary_category,
             match_confidence=confidence,
             matching_confidence=Decimal(str(round(cls_res.matching_confidence, 3))),
             eligibility_reason=cls_res.eligibility_reason,
@@ -678,7 +692,9 @@ async def merge_ocr_into_draft(
     content_type: str | None = None,
     raw_text: str | None = None,
 ) -> PurchaseOut:
-    """Attach another receipt/invoice document to an existing draft and merge without duplicating items or totals."""
+    """Attach another receipt/invoice document to an existing draft and merge without duplicating
+    items or totals.
+    """
     stmt = (
         select(Purchase)
         .options(selectinload(Purchase.items))
@@ -696,7 +712,9 @@ async def merge_ocr_into_draft(
 
     file_sha256 = hashlib.sha256(file_bytes).hexdigest() if file_bytes else None
     existing_attachments = list(purchase.attachments_json or [])
-    if file_sha256 and any(att.get("sha256") == file_sha256 for att in existing_attachments if isinstance(att, dict)):
+    if file_sha256 and any(
+        att.get("sha256") == file_sha256 for att in existing_attachments if isinstance(att, dict)
+    ):
         return await get_purchase(db, household_id, purchase.id)
 
     ocr_result = await _invoke_extract_receipt(
@@ -740,7 +758,9 @@ async def merge_ocr_into_draft(
                 or _extract_attr(ri, "raw_text")
                 or ""
             ).strip()
-            l_tot = int(_extract_attr(ri, "line_total_paise") or _extract_attr(ri, "total_paise") or 0)
+            l_tot = int(
+                _extract_attr(ri, "line_total_paise") or _extract_attr(ri, "total_paise") or 0
+            )
             key = (d_name.lower(), l_tot)
             if key not in existing_keys:
                 existing_keys.add(key)
@@ -791,7 +811,9 @@ async def create_multi_ocr_draft(
 ) -> PurchaseOut:
     """Create a single draft from multiple uploaded receipt/invoice files."""
     if not files:
-        raise AppError(status_code=422, code="VALIDATION_ERROR", message="At least one file is required.")
+        raise AppError(
+            status_code=422, code="VALIDATION_ERROR", message="At least one file is required."
+        )
     first_bytes, first_name, first_ct = files[0]
     draft = await create_ocr_draft(
         db,
@@ -826,7 +848,9 @@ async def create_manual_draft(
     tax_paise = (
         payload.tax_paise
         if payload.tax_paise is not None
-        else (payload.cgst_paise + payload.sgst_paise + payload.igst_paise + payload.other_tax_paise)
+        else (
+            payload.cgst_paise + payload.sgst_paise + payload.igst_paise + payload.other_tax_paise
+        )
     )
     purchase = Purchase(
         household_id=household_id,
@@ -880,12 +904,15 @@ async def create_manual_draft(
         from app.modules.catalog.canonical_resolver import clean_canonical_candidate_name
         from app.modules.catalog.classifier import classify_with_household_db
 
-        cleaned_for_cls = clean_canonical_candidate_name(
-            item_in.display_name,
-            unit_price_paise=item_in.unit_price_paise,
-            line_total_paise=item_in.line_total_paise,
-            quantity=float(raw_qty),
-        ) or item_in.display_name
+        cleaned_for_cls = (
+            clean_canonical_candidate_name(
+                item_in.display_name,
+                unit_price_paise=item_in.unit_price_paise,
+                line_total_paise=item_in.line_total_paise,
+                quantity=float(raw_qty),
+            )
+            or item_in.display_name
+        )
 
         cls_res = await classify_with_household_db(
             db,
@@ -898,7 +925,8 @@ async def create_manual_draft(
             cls_res.matched_canonical_name
             if cls_res.matched_canonical_name
             and cls_res.confidence >= 0.85
-            and cls_res.matching_method in {"user_alias", "exact_canonical", "exact_alias", "normalized_token"}
+            and cls_res.matching_method
+            in {"user_alias", "exact_canonical", "exact_alias", "normalized_token"}
             else None
         )
         canonical_id = item_in.canonical_item_id
@@ -950,7 +978,8 @@ async def create_manual_draft(
             line_total_paise=line_total,
             discount_paise=item_in.discount_paise,
             tax_paise=item_in.tax_paise,
-            track_inventory=bool(item_in.track_inventory) and cls_res.classification_status not in {"non_food", "prepared_meal"},
+            track_inventory=bool(item_in.track_inventory)
+            and cls_res.classification_status not in {"non_food", "prepared_meal"},
             classification_status=cls_res.classification_status,
             explicit_canonical_ingredient_id=item_in.canonical_ingredient_id,
             explicit_variant_id=item_in.ingredient_variant_id,
@@ -970,10 +999,13 @@ async def create_manual_draft(
             canonical_item_id=canonical_id,
             display_name=(
                 draft_res.standardized_name
-                if draft_res.standardized_name and draft_res.ingredient_confidence_tier in {"HIGH", "MEDIUM"}
+                if draft_res.standardized_name
+                and draft_res.ingredient_confidence_tier in {"HIGH", "MEDIUM"}
                 else item_in.display_name.strip()
             ),
-            normalized_name=item_in.normalized_name or cls_res.normalized_name or item_in.display_name.strip().lower(),
+            normalized_name=item_in.normalized_name
+            or cls_res.normalized_name
+            or item_in.display_name.strip().lower(),
             brand=item_in.brand,
             variant=item_in.variant or draft_res.standardized_name,
             pack_size=item_in.pack_size,
@@ -1006,7 +1038,13 @@ async def create_manual_draft(
     purchase.total_amount_paise = (
         payload.total_amount_paise
         if payload.total_amount_paise is not None
-        else (total_paise - payload.discount_paise + payload.additional_charges_paise + tax_paise + payload.rounding_paise)
+        else (
+            total_paise
+            - payload.discount_paise
+            + payload.additional_charges_paise
+            + tax_paise
+            + payload.rounding_paise
+        )
     )
     await db.commit()
     return await get_purchase(db, household_id, purchase.id)
@@ -1256,7 +1294,8 @@ async def update_draft(
                 else (prev_item.track_inventory if prev_item else True)
             )
             # Never allow non-food items to be tracked as pantry inventory.
-            # For ambiguous or prepared items, honour explicit user-approved override (item_in.track_inventory is True)
+            # For ambiguous or prepared items, honour explicit user-approved override
+            # (item_in.track_inventory is True)
             # or a pantry-eligible canonical item selection.
             canonical_allows_pantry = False
             if resolved_canonical_id is not None:
@@ -1268,7 +1307,8 @@ async def update_draft(
             if cls_res.classification_status == "non_food":
                 safe_track = False
             elif canonical_allows_pantry or (
-                user_explicit_override and cls_res.classification_status in {"ambiguous_review", "prepared_meal"}
+                user_explicit_override
+                and cls_res.classification_status in {"ambiguous_review", "prepared_meal"}
             ):
                 safe_track = bool(requested_track)
             elif cls_res.needs_review:
@@ -1281,11 +1321,7 @@ async def update_draft(
                 if cls_res.classification_status == "non_food"
                 else item_in.category.strip().lower()
             )
-            safe_budget = (
-                "pantry_inventory"
-                if safe_track
-                else cls_res.budget_treatment
-            )
+            safe_budget = "pantry_inventory" if safe_track else cls_res.budget_treatment
             safe_source = (
                 "user_correction"
                 if canonical_allows_pantry
@@ -1294,9 +1330,13 @@ async def update_draft(
                 else cls_res.source
             )
             updated_warnings: list[str] | None = None
-            if safe_budget == "requires_user_review" and cls_res.review_reason:
-                updated_warnings = [cls_res.review_reason]
-            elif cls_res.needs_review and not safe_track and cls_res.review_reason:
+            if (
+                safe_budget == "requires_user_review"
+                and cls_res.review_reason
+                or cls_res.needs_review
+                and not safe_track
+                and cls_res.review_reason
+            ):
                 updated_warnings = [cls_res.review_reason]
 
             line_total = item_in.line_total_paise or item_in.unit_price_paise
@@ -1338,11 +1378,17 @@ async def update_draft(
                 user_approved_ingredient=effective_user_approved,
             )
             if (
-                (item_in.user_approved_ingredient or item_in.canonical_ingredient_id is not None or item_in.ingredient_variant_id is not None)
+                (
+                    item_in.user_approved_ingredient
+                    or item_in.canonical_ingredient_id is not None
+                    or item_in.ingredient_variant_id is not None
+                )
                 and draft_res.canonical_ingredient_id is not None
                 and safe_track
             ):
-                from app.modules.catalog.ingredient_catalogue_sync import record_household_learned_alias
+                from app.modules.catalog.ingredient_catalogue_sync import (
+                    record_household_learned_alias,
+                )
                 from app.modules.inventory.models import CanonicalIngredient
 
                 ing_for_learn = await db.get(CanonicalIngredient, draft_res.canonical_ingredient_id)
@@ -1364,7 +1410,12 @@ async def update_draft(
                 canonical_item_id=resolved_canonical_id,
                 display_name=(
                     draft_res.standardized_name
-                    if draft_res.standardized_name and (effective_user_approved or item_in.canonical_ingredient_id is not None or item_in.ingredient_variant_id is not None)
+                    if draft_res.standardized_name
+                    and (
+                        effective_user_approved
+                        or item_in.canonical_ingredient_id is not None
+                        or item_in.ingredient_variant_id is not None
+                    )
                     else item_in.display_name.strip()
                 ),
                 normalized_name=(
@@ -1373,9 +1424,15 @@ async def update_draft(
                     or cls_res.normalized_name
                     or item_in.display_name.strip().lower()
                 ),
-                brand=item_in.brand if item_in.brand is not None else (prev_item.brand if prev_item else None),
-                variant=item_in.variant if item_in.variant is not None else (draft_res.standardized_name or (prev_item.variant if prev_item else None)),
-                pack_size=item_in.pack_size if item_in.pack_size is not None else (prev_item.pack_size if prev_item else None),
+                brand=item_in.brand
+                if item_in.brand is not None
+                else (prev_item.brand if prev_item else None),
+                variant=item_in.variant
+                if item_in.variant is not None
+                else (draft_res.standardized_name or (prev_item.variant if prev_item else None)),
+                pack_size=item_in.pack_size
+                if item_in.pack_size is not None
+                else (prev_item.pack_size if prev_item else None),
                 category=safe_cat,
                 match_confidence=(
                     "user_selected" if item_in.canonical_item_id is not None else "unmatched"
@@ -1423,9 +1480,7 @@ async def update_draft(
 
 
 async def discard_draft(db: AsyncSession, household_id: UUID, purchase_id: UUID) -> None:
-    stmt = select(Purchase).where(
-        Purchase.id == purchase_id, Purchase.household_id == household_id
-    )
+    stmt = select(Purchase).where(Purchase.id == purchase_id, Purchase.household_id == household_id)
     purchase = (await db.execute(stmt)).scalar_one_or_none()
     if purchase is None:
         raise AppError(status_code=404, code="NOT_FOUND", message="Purchase not found.")
@@ -1477,12 +1532,17 @@ async def _upsert_canonical_and_alias(
             item.resolution_status = (
                 "pending_review" if prod_res.outcome == "review_required" else "new_product"
             )
-            cleaned_name = clean_canonical_candidate_name(
-                item.display_name,
-                unit_price_paise=item.unit_price_paise,
-                line_total_paise=item.line_total_paise,
-                quantity=float(item.normalized_qty) if item.normalized_qty is not None else None,
-            ) or item.display_name
+            cleaned_name = (
+                clean_canonical_candidate_name(
+                    item.display_name,
+                    unit_price_paise=item.unit_price_paise,
+                    line_total_paise=item.line_total_paise,
+                    quantity=float(item.normalized_qty)
+                    if item.normalized_qty is not None
+                    else None,
+                )
+                or item.display_name
+            )
             from app.modules.catalog.ingredient_resolver import IngredientResolver
 
             ing_res = IngredientResolver().resolve_text(cleaned_name)
@@ -1494,7 +1554,8 @@ async def _upsert_canonical_and_alias(
                     cls_res.matched_canonical_name
                     if cls_res.matched_canonical_name
                     and cls_res.confidence >= 0.85
-                    and cls_res.matching_method in {"exact_canonical", "exact_alias", "normalized_token"}
+                    and cls_res.matching_method
+                    in {"exact_canonical", "exact_alias", "normalized_token"}
                     else cleaned_name
                 )
             slug = _slugify(canonical_name)
@@ -1584,7 +1645,9 @@ async def confirm_purchase(
                 or (not it.track_inventory and it.budget_treatment != "requires_user_review")
             ):
                 continue
-            meta = it.resolution_metadata_json if isinstance(it.resolution_metadata_json, dict) else {}
+            meta = (
+                it.resolution_metadata_json if isinstance(it.resolution_metadata_json, dict) else {}
+            )
             tier = meta.get("ingredient_confidence_tier") or it.resolution_status
             approved = bool(meta.get("user_approved_ingredient", False))
             if tier in {"LOW", "UNMATCHED"} and not approved:
@@ -1641,7 +1704,11 @@ async def confirm_purchase(
         if item.canonical_item_id is not None:
             c_obj = await db.get(CanonicalItem, item.canonical_item_id)
             if c_obj is not None:
-                if not c_obj.pantry_eligible or c_obj.category == "non_food" or c_obj.is_prepared_food:
+                if (
+                    not c_obj.pantry_eligible
+                    or c_obj.category == "non_food"
+                    or c_obj.is_prepared_food
+                ):
                     item.track_inventory = False
                     continue
                 canonical_allows_pantry = True
@@ -1675,9 +1742,7 @@ async def confirm_purchase(
             item.track_inventory = False
             item.budget_treatment = "requires_user_review"
             continue
-        canonical_id = await _upsert_canonical_and_alias(
-            db, household_id=household_id, item=item
-        )
+        canonical_id = await _upsert_canonical_and_alias(db, household_id=household_id, item=item)
         c_item_for_map = await db.get(CanonicalItem, canonical_id)
         if c_item_for_map is not None:
             if canonical_id in confirmed_ingredient_inputs:
@@ -1724,7 +1789,9 @@ async def confirm_purchase(
                     )
                     ing_obj = await db.get(CanonicalIngredient, saved_map.canonical_ingredient_id)
                     if ing_obj is not None and (item.raw_text or item.display_name):
-                        from app.modules.catalog.ingredient_catalogue_sync import record_household_learned_alias
+                        from app.modules.catalog.ingredient_catalogue_sync import (
+                            record_household_learned_alias,
+                        )
 
                         await record_household_learned_alias(
                             db,
@@ -1856,9 +1923,7 @@ async def confirm_purchase(
                 else purchase.purchased_on
             ),
             meal_type=(
-                meal_payload.meal_type
-                if meal_payload and meal_payload.meal_type
-                else "other"
+                meal_payload.meal_type if meal_payload and meal_payload.meal_type else "other"
             ),
             dining_mode=(
                 meal_payload.dining_mode

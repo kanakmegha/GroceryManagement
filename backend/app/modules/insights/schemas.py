@@ -77,8 +77,12 @@ class PeriodBudgetEvaluationOut(BaseModel):
 class BudgetUpsertRequest(BaseModel):
     period_type: BudgetPeriodType
     overall_limit_paise: int = Field(..., gt=0, description="Overall budget limit in paise (> 0)")
-    grocery_limit_paise: int | None = Field(default=None, gt=0, description="Optional grocery limit in paise (> 0)")
-    outside_food_limit_paise: int | None = Field(default=None, gt=0, description="Optional outside-food limit in paise (> 0)")
+    grocery_limit_paise: int | None = Field(
+        default=None, gt=0, description="Optional grocery limit in paise (> 0)"
+    )
+    outside_food_limit_paise: int | None = Field(
+        default=None, gt=0, description="Optional outside-food limit in paise (> 0)"
+    )
     effective_from: date | None = None
 
 

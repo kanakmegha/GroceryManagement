@@ -267,9 +267,7 @@ async def test_cloud_provider_adapters_contract_with_mock_transport() -> None:
             }
         ]
     }
-    vlm_transport = httpx.MockTransport(
-        lambda _req: httpx.Response(200, json=vlm_payload)
-    )
+    vlm_transport = httpx.MockTransport(lambda _req: httpx.Response(200, json=vlm_payload))
     vlm = HuggingFaceVlmProvider(token="hf_mock_token")
     res = await vlm.extract_structured(b"fake-png", transport=vlm_transport)
     assert res is not None
@@ -315,4 +313,3 @@ async def test_missing_ocr_provider_emits_explicit_error(
     assert res.needs_review is True
     assert any(i.code == "OCR_PROVIDER_UNAVAILABLE" for i in res.validation_issues)
     assert any("OCR_PROVIDER_UNAVAILABLE" in w for w in res.warnings)
-

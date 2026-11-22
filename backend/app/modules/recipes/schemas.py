@@ -81,7 +81,9 @@ class RecipeRecommendationsResponse(BaseModel):
 class HouseholdRecipePreferencesIn(BaseModel):
     timezone: str = Field(default="Asia/Kolkata", min_length=1, max_length=64)
     location_name: str | None = Field(default=None, max_length=120)
-    diet_type: str = Field(default="any", pattern="^(any|vegetarian|vegan|eggetarian|non_vegetarian)$")
+    diet_type: str = Field(
+        default="any", pattern="^(any|vegetarian|vegan|eggetarian|non_vegetarian)$"
+    )
     dietary_restrictions: list[str] = Field(default_factory=list)
     preferred_cuisines: list[str] = Field(default_factory=list)
     preferred_meal_types: list[str] = Field(default_factory=list)

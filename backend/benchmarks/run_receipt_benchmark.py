@@ -11,7 +11,7 @@ import asyncio
 import io
 import json
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -37,7 +37,9 @@ class GroundTruthItem:
 class BenchmarkCase:
     case_id: str
     category: str
-    quality_category: str  # clean_scan | mobile_photo | low_light | angled | damaged | digital_pdf | scanned_pdf | unreadable
+    # clean_scan | mobile_photo | low_light | angled | damaged
+    # | digital_pdf | scanned_pdf | unreadable
+    quality_category: str
     synthetic: bool
     filename: str
     content_type: str
@@ -92,7 +94,14 @@ def _wer(pred: str, ref: str) -> float:
     return round(prev[-1] / max(len(r_words), 1), 4)
 
 
-def _render_receipt_card(lines: list[str], *, width: int = 580, bg: tuple[int, int, int] = (246, 245, 240), ink: tuple[int, int, int] = (25, 25, 28), font_size: int = 22) -> np.ndarray:
+def _render_receipt_card(
+    lines: list[str],
+    *,
+    width: int = 580,
+    bg: tuple[int, int, int] = (246, 245, 240),
+    ink: tuple[int, int, int] = (25, 25, 28),
+    font_size: int = 22,
+) -> np.ndarray:
     line_h = font_size + 14
     height = max(420, 60 + len(lines) * line_h)
     img = Image.new("RGB", (width, height), bg)
@@ -108,7 +117,17 @@ def _render_receipt_card(lines: list[str], *, width: int = 580, bg: tuple[int, i
     return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
 
 
-def _place_on_background(card_bgr: np.ndarray, *, bg_color: tuple[int, int, int], angle_deg: float = 0.0, perspective: bool = False, shadow: bool = False, glare: bool = False, blur_k: int = 0, finger: bool = False) -> bytes:
+def _place_on_background(
+    card_bgr: np.ndarray,
+    *,
+    bg_color: tuple[int, int, int],
+    angle_deg: float = 0.0,
+    perspective: bool = False,
+    shadow: bool = False,
+    glare: bool = False,
+    blur_k: int = 0,
+    finger: bool = False,
+) -> bytes:
     ch, cw = card_bgr.shape[:2]
     pad_x, pad_y = 180, 140
     canvas = np.full((ch + 2 * pad_y, cw + 2 * pad_x, 3), bg_color, dtype=np.uint8)
@@ -119,12 +138,14 @@ def _place_on_background(card_bgr: np.ndarray, *, bg_color: tuple[int, int, int]
 
     if perspective:
         src = np.float32([[0, 0], [cw, 0], [cw, ch], [0, ch]])
-        dst = np.float32([
-            [pad_x + 35, pad_y + 15],
-            [pad_x + cw - 20, pad_y + 40],
-            [pad_x + cw - 5, pad_y + ch - 10],
-            [pad_x + 10, pad_y + ch - 30],
-        ])
+        dst = np.float32(
+            [
+                [pad_x + 35, pad_y + 15],
+                [pad_x + cw - 20, pad_y + 40],
+                [pad_x + cw - 5, pad_y + ch - 10],
+                [pad_x + 10, pad_y + ch - 30],
+            ]
+        )
         m = cv2.getPerspectiveTransform(src, dst)
         mask = np.full((ch, cw), 255, dtype=np.uint8)
         warped_card = cv2.warpPerspective(card_bgr, m, (canvas.shape[1], canvas.shape[0]))
@@ -140,7 +161,9 @@ def _place_on_background(card_bgr: np.ndarray, *, bg_color: tuple[int, int, int]
 
     if finger:
         # Partial finger occlusion on bottom-left edge (outside text)
-        cv2.ellipse(canvas, (pad_x + 15, pad_y + ch - 40), (45, 75), -20, 0, 360, (135, 165, 210), -1)
+        cv2.ellipse(
+            canvas, (pad_x + 15, pad_y + ch - 40), (45, 75), -20, 0, 360, (135, 165, 210), -1
+        )
 
     if shadow:
         grad = np.linspace(0.55, 1.0, canvas.shape[1], dtype=np.float32)[None, :, None]
@@ -543,9 +566,9 @@ async def run_benchmark() -> dict[str, Any]:
 
         cer = _cer(res.raw_text.lower(), case.reference_text.lower())
         wer = _wer(res.raw_text.lower(), case.reference_text.lower())
-        merchant_match = (
-            (res.merchant_name or "").strip().lower() == (case.merchant_name or "").strip().lower()
-        )
+        merchant_match = (res.merchant_name or "").strip().lower() == (
+            case.merchant_name or ""
+        ).strip().lower()
         date_match = res.receipt_date == case.receipt_date
         tax_match = (res.tax_paise or 0) == (case.tax_paise or 0)
         total_match = res.grand_total_paise == case.grand_total_paise

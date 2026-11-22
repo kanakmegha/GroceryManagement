@@ -50,7 +50,10 @@ class CanonicalItem(Base):
         Boolean, nullable=False, default=True, server_default=text("true")
     )
     budget_treatment: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="pantry_inventory", server_default=text("'pantry_inventory'")
+        String(32),
+        nullable=False,
+        default="pantry_inventory",
+        server_default=text("'pantry_inventory'"),
     )
     language: Mapped[str] = mapped_column(
         String(16), nullable=False, default="en", server_default=text("'en'")
@@ -258,7 +261,10 @@ class IngredientMapping(Base):
             name="ck_ingredient_mappings_confidence",
         ),
         CheckConstraint(
-            "mapping_source IN ('catalogue', 'classifier_v2', 'user_confirmed', 'user_correction', 'manual')",
+            (
+                "mapping_source IN ('catalogue', 'classifier_v2', 'user_confirmed', "
+                "'user_correction', 'manual')"
+            ),
             name="ck_ingredient_mappings_source",
         ),
         Index(
@@ -317,7 +323,10 @@ class IngredientAlias(Base):
     __tablename__ = "ingredient_aliases"
     __table_args__ = (
         CheckConstraint(
-            "alias_type IN ('synonym', 'transliteration', 'regional_name', 'spelling_variant', 'ocr_variant', 'user_correction')",
+            (
+                "alias_type IN ('synonym', 'transliteration', 'regional_name', "
+                "'spelling_variant', 'ocr_variant', 'user_correction')"
+            ),
             name="ck_ingredient_aliases_type",
         ),
         CheckConstraint(
@@ -383,4 +392,3 @@ class IngredientAlias(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
     )
-

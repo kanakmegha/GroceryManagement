@@ -13,7 +13,9 @@ from app.modules.catalog.ingredient_catalogue_sync import sync_catalogue_to_db
 from app.modules.inventory.models import CanonicalIngredient
 
 
-async def _bootstrap_household(client: AsyncClient, jwks_provider, prefix: str) -> tuple[dict[str, str], str]:
+async def _bootstrap_household(
+    client: AsyncClient, jwks_provider, prefix: str
+) -> tuple[dict[str, str], str]:
     sub = f"{prefix}-{uuid.uuid4().hex[:8]}"
     token = jwks_provider.make_token(sub=sub, email=f"{sub}@example.com")
     headers = {"Authorization": f"Bearer {token}"}
@@ -36,7 +38,8 @@ async def test_phase7_4_realtime_standardisation_and_confidence_separation(
 
     headers, _ = await _bootstrap_household(client, jwks_provider, "p74-a")
 
-    # 1. Manual/JSON draft creation runs real-time IngredientResolver + separate qty/financial checks
+    # 1. Manual/JSON draft creation runs real-time IngredientResolver + separate qty/financial
+    # checks
     resp = await client.post(
         "/api/v1/purchases/drafts",
         headers=headers,
@@ -179,7 +182,8 @@ async def test_phase7_4_realtime_standardisation_and_confidence_separation(
     assert confirm_ok.json()["status"] == "confirmed"
     assert len(confirm_ok.json()["created_lots"]) == 3
 
-    # 5. Household-scoped learning: Household A now resolves "XYZZZ MYSTERY PACK 200G" -> Ghee (HIGH)
+    # 5. Household-scoped learning: Household A now resolves "XYZZZ MYSTERY PACK 200G" -> Ghee
+    # (HIGH)
     next_a = await client.post(
         "/api/v1/purchases/drafts",
         headers=headers,

@@ -1,4 +1,6 @@
-"""Phase 9 regression tests for receipt intelligence, mixed classification, meal tracking, price history, and recipes."""
+"""Phase 9 regression tests for receipt intelligence, mixed classification, meal tracking, price
+history, and recipes.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +16,9 @@ from tests.conftest import EphemeralJWKSProvider
 
 @pytest.mark.asyncio
 async def test_instamart_and_usd_weighted_produce_extraction_independent_of_merchant() -> None:
-    """Both Swiggy Instamart (with R$ OCR noise & 'Dates') and USD weighted produce extract cleanly."""
+    """Both Swiggy Instamart (with R$ OCR noise & 'Dates') and USD weighted produce extract
+    cleanly.
+    """
     instamart_raw = """SWIGGY
 instamart
 ESSAI NO: 11221302000969
@@ -38,8 +42,8 @@ Tirand Total: R$ 585.00"""
         )
     )
     assert len(r1.lines) == 4
-    assert any("Dates" in l.name and l.total_paise == 11400 for l in r1.lines)
-    assert any("Detergent" in l.name and l.total_paise == 39100 for l in r1.lines)
+    assert any("Dates" in line.name and line.total_paise == 11400 for line in r1.lines)
+    assert any("Detergent" in line.name and line.total_paise == 39100 for line in r1.lines)
     assert r1.additional_charges_paise == 2100
     assert r1.discount_paise == 1800
     assert r1.math_reconciled is True
@@ -80,7 +84,9 @@ async def test_mixed_receipt_meal_tracking_price_history_and_recipes(
     client: httpx.AsyncClient,
     jwks_provider: EphemeralJWKSProvider,
 ) -> None:
-    """Verify mixed receipt, uncertain classification warning, meal tracking, ₹/kg price history, and recipes."""
+    """Verify mixed receipt, uncertain classification warning, meal tracking, ₹/kg price history,
+    and recipes.
+    """
     token = jwks_provider.make_token(sub="user_intel", email="intel@example.com", name="Intel")
     headers = {"Authorization": f"Bearer {token}"}
     hh_id = (await client.get("/api/v1/auth/me", headers=headers)).json()["active_household"]["id"]
@@ -88,7 +94,9 @@ async def test_mixed_receipt_meal_tracking_price_history_and_recipes(
     today_str = date.today().isoformat()
 
     # 1. Uncertain item classification on unknown merchant preserves receipt + emits warning
-    uncertain_txt = f"Corner Shop\nDate: {today_str}\nPhulka 10 pcs   Rs. 150.00\nGrand Total Rs. 150.00\n"
+    uncertain_txt = (
+        f"Corner Shop\nDate: {today_str}\nPhulka 10 pcs   Rs. 150.00\nGrand Total Rs. 150.00\n"
+    )
     u_res = await client.post(
         "/api/v1/purchases/ocr",
         headers=headers,
@@ -122,7 +130,11 @@ async def test_mixed_receipt_meal_tracking_price_history_and_recipes(
     assert meal_patch.json()["people_count"] == 3
 
     # 2. Mixed receipt: 1 grocery item (Basmati Rice 2 kg) + 1 prepared food item (Biryani)
-    mixed_txt = f"Bazaar Food Court\nDate: {today_str}\nBasmati Rice 2 kg   Rs. 240.00\nChicken Biryani 1 pcs   Rs. 260.00\nGrand Total Rs. 500.00\n"
+    mixed_txt = (
+        f"Bazaar Food Court\nDate: {today_str}\n"
+        "Basmati Rice 2 kg   Rs. 240.00\nChicken Biryani 1 pcs   Rs. 260.00\n"
+        "Grand Total Rs. 500.00\n"
+    )
     m_res = await client.post(
         "/api/v1/purchases/ocr",
         headers=headers,
@@ -165,7 +177,9 @@ async def test_mixed_receipt_meal_tracking_price_history_and_recipes(
     assert g2_res.status_code == 201
     await client.post(f"/api/v1/purchases/{g2_res.json()['id']}/confirm", headers=headers)
 
-    ph = (await client.get(f"/api/v1/inventory/items/{rice_cid}/price-history", headers=headers)).json()
+    ph = (
+        await client.get(f"/api/v1/inventory/items/{rice_cid}/price-history", headers=headers)
+    ).json()
     assert ph["standard_unit_label"] == "₹/kg"
     assert ph["latest_price_paise_per_std"] == 15000
     assert ph["avg_price_paise_per_std"] == 13500
@@ -180,9 +194,12 @@ async def test_mixed_receipt_meal_tracking_price_history_and_recipes(
     assert insights["grocery_spend_paise"] == 80000 - 41000  # ₹390.00
     assert insights["outside_food_count"] == 2
 
-    outside_list = (await client.get("/api/v1/insights/outside-food?days=30", headers=headers)).json()
+    outside_list = (
+        await client.get("/api/v1/insights/outside-food?days=30", headers=headers)
+    ).json()
     assert len(outside_list) == 2
 
-    # 5. Recipe recommendations work with confirmed grocery inventory (no crash, grounded in inventory)
+    # 5. Recipe recommendations work with confirmed grocery inventory (no crash, grounded in
+    # inventory)
     recs = await client.get("/api/v1/recipes/recommendations", headers=headers)
     assert recs.status_code == 200

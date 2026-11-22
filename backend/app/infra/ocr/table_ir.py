@@ -78,7 +78,9 @@ class TableIR(BaseModel):
 
     document_id: str
     table_id: int
-    table_kind: Literal["item_table", "tax_summary_table", "payment_table", "unknown"] = "item_table"
+    table_kind: Literal["item_table", "tax_summary_table", "payment_table", "unknown"] = (
+        "item_table"
+    )
     page_numbers: list[int] = Field(default_factory=list)
     columns: list[TableColumnIR] = Field(default_factory=list)
     rows: list[TableRowIR] = Field(default_factory=list)

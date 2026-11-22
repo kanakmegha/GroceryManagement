@@ -90,13 +90,17 @@ async def submit_replenishment_feedback(
     db: AsyncSession = Depends(get_db),
 ) -> ReplenishmentFeedbackOut:
     item = (
-        await db.execute(
-            select(CanonicalItem).where(
-                CanonicalItem.id == canonical_item_id,
-                CanonicalItem.household_id == ctx.household.id,
+        (
+            await db.execute(
+                select(CanonicalItem).where(
+                    CanonicalItem.id == canonical_item_id,
+                    CanonicalItem.household_id == ctx.household.id,
+                )
             )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     if item is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -176,12 +180,16 @@ async def get_shopping_list(
     db: AsyncSession = Depends(get_db),
 ) -> ShoppingListResponse:
     rows = (
-        await db.execute(
-            select(ShoppingListItem)
-            .where(ShoppingListItem.household_id == ctx.household.id)
-            .order_by(ShoppingListItem.updated_at.desc(), ShoppingListItem.created_at.desc())
+        (
+            await db.execute(
+                select(ShoppingListItem)
+                .where(ShoppingListItem.household_id == ctx.household.id)
+                .order_by(ShoppingListItem.updated_at.desc(), ShoppingListItem.created_at.desc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     pending: list[ShoppingListItemOut] = []
     purchased: list[ShoppingListItemOut] = []
@@ -217,13 +225,17 @@ async def add_shopping_list_item(
                 detail="Invalid canonical_item_id.",
             ) from exc
         c_item = (
-            await db.execute(
-                select(CanonicalItem).where(
-                    CanonicalItem.id == canonical_uuid,
-                    CanonicalItem.household_id == ctx.household.id,
+            (
+                await db.execute(
+                    select(CanonicalItem).where(
+                        CanonicalItem.id == canonical_uuid,
+                        CanonicalItem.household_id == ctx.household.id,
+                    )
                 )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         if c_item is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -241,14 +253,18 @@ async def add_shopping_list_item(
 
     if canonical_uuid is not None:
         existing = (
-            await db.execute(
-                select(ShoppingListItem).where(
-                    ShoppingListItem.household_id == ctx.household.id,
-                    ShoppingListItem.canonical_item_id == canonical_uuid,
-                    ShoppingListItem.status == "pending",
+            (
+                await db.execute(
+                    select(ShoppingListItem).where(
+                        ShoppingListItem.household_id == ctx.household.id,
+                        ShoppingListItem.canonical_item_id == canonical_uuid,
+                        ShoppingListItem.status == "pending",
+                    )
                 )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         if existing is not None:
             sources = list(existing.sources_json or [])
             already_same_source = any(
@@ -266,7 +282,11 @@ async def add_shopping_list_item(
                 if existing.quantity is None:
                     existing.quantity = Decimal(str(payload.quantity))
                     existing.unit = norm_unit
-                elif norm_unit is None or existing.unit is None or normalize_unit(existing.unit) == norm_unit:
+                elif (
+                    norm_unit is None
+                    or existing.unit is None
+                    or normalize_unit(existing.unit) == norm_unit
+                ):
                     existing.quantity = Decimal(str(float(existing.quantity) + payload.quantity))
                     if existing.unit is None:
                         existing.unit = norm_unit
@@ -277,10 +297,13 @@ async def add_shopping_list_item(
                         existing.unit,
                     )
                     if converted is not None:
-                        existing.quantity = Decimal(str(round(float(existing.quantity) + converted, 3)))
+                        existing.quantity = Decimal(
+                            str(round(float(existing.quantity) + converted, 3))
+                        )
                     else:
                         unit_conflict_note = (
-                            f"Added {payload.quantity} {norm_unit} ({payload.source}) could not be merged "
+                            f"Added {payload.quantity} {norm_unit} ({payload.source}) "
+                            "could not be merged "
                             f"with existing {float(existing.quantity):g} {existing.unit}."
                         )
                         existing.notes = (
@@ -326,13 +349,17 @@ async def update_shopping_list_item(
     db: AsyncSession = Depends(get_db),
 ) -> ShoppingListItemOut:
     row = (
-        await db.execute(
-            select(ShoppingListItem).where(
-                ShoppingListItem.id == item_id,
-                ShoppingListItem.household_id == ctx.household.id,
+        (
+            await db.execute(
+                select(ShoppingListItem).where(
+                    ShoppingListItem.id == item_id,
+                    ShoppingListItem.household_id == ctx.household.id,
+                )
             )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -360,13 +387,17 @@ async def delete_shopping_list_item(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     row = (
-        await db.execute(
-            select(ShoppingListItem).where(
-                ShoppingListItem.id == item_id,
-                ShoppingListItem.household_id == ctx.household.id,
+        (
+            await db.execute(
+                select(ShoppingListItem).where(
+                    ShoppingListItem.id == item_id,
+                    ShoppingListItem.household_id == ctx.household.id,
+                )
             )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

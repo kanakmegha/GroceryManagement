@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import re
-from typing import Iterable
+from collections.abc import Iterable
+from contextlib import suppress
 
 from app.infra.ocr.document_classifier import classify_document_type
 from app.infra.ocr.privacy import redact_pii_text
@@ -83,7 +84,14 @@ _DISCOUNT_KEYWORDS = ("discount", "disc", "savings", "coupon", "promo", "less:")
 _HANDLING_KEYWORDS = ("handling fee", "handling charge", "handling charges", "handling")
 _DELIVERY_KEYWORDS = ("delivery fee", "delivery charge", "delivery charges", "delivery partner fee")
 _FEE_KEYWORDS = ("packing fee", "platform fee", "service charge", "convenience fee", "surge fee")
-_TENDER_SKIP_KEYWORDS = ("change $", "change ₹", "change rs", "amount tendered", "tendered", "you saved")
+_TENDER_SKIP_KEYWORDS = (
+    "change $",
+    "change ₹",
+    "change rs",
+    "amount tendered",
+    "tendered",
+    "you saved",
+)
 _PAYMENT_TXN_RE = re.compile(
     r"(?:\btransaction\s*id\b|\bpay\s+payment\s+on\b|\bpayment\s+on\s+\d{4}\b|\b[a-f0-9]{16,}\b.*\bpay\b)",
     re.IGNORECASE,
@@ -155,9 +163,7 @@ def cluster_boxes_into_lines(boxes: Iterable[OcrTokenBox]) -> list[tuple[str, fl
             max_h = max(max(b.h for b in row), box.h)
             tol = min(0.025, max(0.008, 0.55 * max_h))
             # Never merge two boxes that overlap horizontally (stacked lines in same column)
-            has_x_overlap = any(
-                (min(b.x_right, box.x_right) - max(b.x, box.x)) > 0.02 for b in row
-            )
+            has_x_overlap = any((min(b.x_right, box.x_right) - max(b.x, box.x)) > 0.02 for b in row)
             if not has_x_overlap and abs(box.y_center - avg_y) <= tol:
                 row.append(box)
                 placed = True
@@ -186,7 +192,9 @@ def _clean_ocr_numeric_noise(text: str) -> str:
     # Fix comma-dot confusion in decimal tails e.g. '180,00' -> '180.00'
     cleaned = re.sub(r"(\d+),(\d{2})(?=\s*$|\s)", r"\1.\2", cleaned)
     # Fix colon-dot confusion after currency e.g. 'Rs 18:00' -> 'Rs 18.00'
-    cleaned = re.sub(rf"({_CURR_SYM}\s*:?\s*\d+):(\d{{2}})\b", r"\1.\2", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(
+        rf"({_CURR_SYM}\s*:?\s*\d+):(\d{{2}})\b", r"\1.\2", cleaned, flags=re.IGNORECASE
+    )
     # Strip stray trailing colon/semicolon after numbers e.g. '729.00:' -> '729.00', '110:' -> '110'
     cleaned = re.sub(r"(\d)[:;]+(?=\s|$)", r"\1", cleaned)
     # Normalize bullet/dot separator between qty and unit e.g. '1 • KG' -> '1 KG'
@@ -212,7 +220,8 @@ def _extract_amount_paise_from_line(line: str) -> tuple[int | None, str]:
             remaining = norm_line[: m.start()].strip()
             return paise, remaining
 
-    # Fallback: if a stray integer/margin note trails a 2-decimal monetary amount (e.g. 'G.TOTAL : - 3459.00 3500')
+    # Fallback: if a stray integer/margin note trails a 2-decimal monetary amount
+    # (e.g. 'G.TOTAL : - 3459.00 3500')
     dec_matches = list(re.finditer(r"(?:^|\s)([0-9][0-9,]*[.,][0-9]{2})(?=\s|$)", norm_line))
     if dec_matches:
         last_dec = dec_matches[-1]
@@ -261,7 +270,7 @@ _TRAILING_4COL_UNIT_RE = re.compile(
 
 
 def _extract_4col_unit_line(line: str) -> tuple[str, float, str, int, int, bool] | None:
-    """Parse '<name> <qty> <unit> <rate> <total>' -> (name, qty, unit, rate_paise, total_paise, math_ok)."""
+    """Parse '<name> <qty> <unit> <rate> <total>' into a 6-tuple with math_ok."""
     norm_line = _clean_ocr_numeric_noise(line)
     m = _TRAILING_4COL_UNIT_RE.match(norm_line)
     if not m:
@@ -289,7 +298,9 @@ def _extract_4col_unit_line(line: str) -> tuple[str, float, str, int, int, bool]
 def _classify_crossout_line(line: str) -> tuple[str, str]:
     """Classify whether a line is explicitly cancelled, has an uncertain cross-out, or is clean."""
     stripped = line.strip()
-    if re.match(r"^(?:\[?\s*(?:cancelled|void|strike)\s*\]?\b|~~.+~~\s*$)", stripped, re.IGNORECASE):
+    if re.match(
+        r"^(?:\[?\s*(?:cancelled|void|strike)\s*\]?\b|~~.+~~\s*$)", stripped, re.IGNORECASE
+    ):
         return "cancelled", stripped
     if re.match(r"^~{1,2}\s*[^~]", stripped):
         cleaned = re.sub(r"^[~\s]+", "", stripped).strip()
@@ -305,13 +316,15 @@ def _is_separator_or_noise(line: str) -> bool:
         return True
     if re.match(r"^[^0-9]*(?:={2,}|[-=]{2,}>?|-{3,})\s*$", stripped):
         return True
-    if re.match(r"^(?:item\s*qty|atem\s*qty|total\s*qty|total\s*items)\b", stripped, re.IGNORECASE):
-        return True
-    return False
+    return bool(
+        re.match(r"^(?:item\s*qty|atem\s*qty|total\s*qty|total\s*items)\b", stripped, re.IGNORECASE)
+    )
 
 
 def _clean_item_name(raw_name: str) -> str:
-    cleaned = re.sub(r"^(?:\d+[.)]?|[*•\-–]+|[A-Za-z](?=\s+(?:\d+|[A-Z][a-zA-Z]+)))\s+", "", raw_name.strip())
+    cleaned = re.sub(
+        r"^(?:\d+[.)]?|[*•\-–]+|[A-Za-z](?=\s+(?:\d+|[A-Z][a-zA-Z]+)))\s+", "", raw_name.strip()
+    )
     cleaned = re.sub(r"\s{2,}", " ", cleaned).strip(" -:\t|*")
     return cleaned
 
@@ -321,7 +334,14 @@ def _looks_like_wrapped_name(line: str) -> bool:
     if _is_separator_or_noise(s):
         return False
     lower = s.lower()
-    if any(k in lower for k in _HEADER_SKIP_KEYWORDS + _TOTAL_KEYWORDS + _SUBTOTAL_KEYWORDS + _DISCOUNT_KEYWORDS + _ROUNDING_KEYWORDS):
+    if any(
+        k in lower
+        for k in _HEADER_SKIP_KEYWORDS
+        + _TOTAL_KEYWORDS
+        + _SUBTOTAL_KEYWORDS
+        + _DISCOUNT_KEYWORDS
+        + _ROUNDING_KEYWORDS
+    ):
         return False
     if _GSTIN_RE.search(s) or _DATE_RE.search(s) or _BILL_NO_RE.search(s) or _PHONE_RE.search(s):
         return False
@@ -352,9 +372,7 @@ def parse_receipt_text_and_boxes(
         effective_raw_text = "\n".join(txt for txt, _ in lines_with_conf)
     else:
         lines_with_conf = [
-            (ln.strip(), base_confidence)
-            for ln in (raw_text or "").splitlines()
-            if ln.strip()
+            (ln.strip(), base_confidence) for ln in (raw_text or "").splitlines() if ln.strip()
         ]
         effective_raw_text = raw_text or ""
 
@@ -382,7 +400,11 @@ def parse_receipt_text_and_boxes(
     explicit_tax_total: int | None = None
 
     has_inr_signal = bool(
-        re.search(r"(?:₹|\bRs\.?\b|\bINR\b|\bCGST\b|\bSGST\b|\bIGST\b|\bGSTIN\b)", effective_raw_text, re.IGNORECASE)
+        re.search(
+            r"(?:₹|\bRs\.?\b|\bINR\b|\bCGST\b|\bSGST\b|\bIGST\b|\bGSTIN\b)",
+            effective_raw_text,
+            re.IGNORECASE,
+        )
     )
     has_eur_signal = bool(re.search(r"(?:€|\bEUR\b)", effective_raw_text, re.IGNORECASE))
     has_gbp_signal = bool(re.search(r"(?:£|\bGBP\b)", effective_raw_text, re.IGNORECASE))
@@ -411,13 +433,15 @@ def parse_receipt_text_and_boxes(
         else None
     )
     use_table_lines = bool(table_result and table_result.has_table_headers and table_result.lines)
-    parsed_lines: list[ExtractedReceiptLine] = list(table_result.lines) if use_table_lines and table_result else []
+    parsed_lines: list[ExtractedReceiptLine] = (
+        list(table_result.lines) if use_table_lines and table_result else []
+    )
     fallback_lines: list[ExtractedReceiptLine] = []
     pending_wrapped_parts: list[str] = []
     pending_summary_key: str | None = None
     seen_items_section = False
-    has_row_level_cgst = use_table_lines and any(l.cgst_paise is not None for l in parsed_lines)
-    has_row_level_sgst = use_table_lines and any(l.sgst_paise is not None for l in parsed_lines)
+    has_row_level_cgst = use_table_lines and any(ln.cgst_paise is not None for ln in parsed_lines)
+    has_row_level_sgst = use_table_lines and any(ln.sgst_paise is not None for ln in parsed_lines)
     in_gst_summary_section = False
     printed_item_qty: float | None = None
     candidate_row_count = 0
@@ -433,10 +457,8 @@ def parse_receipt_text_and_boxes(
             re.IGNORECASE,
         )
         if qty_summary_m:
-            try:
+            with suppress(ValueError):
                 printed_item_qty = float(qty_summary_m.group(1))
-            except ValueError:
-                pass
             pending_wrapped_parts.clear()
             continue
         if _is_separator_or_noise(line):
@@ -453,7 +475,11 @@ def parse_receipt_text_and_boxes(
 
         if after_grand_total and _NUMERIC_TOKEN_RE.match(line.strip()):
             cand_paise = parse_inr_to_paise(line.strip())
-            if cand_paise is not None and grand_total_paise is not None and cand_paise != grand_total_paise:
+            if (
+                cand_paise is not None
+                and grand_total_paise is not None
+                and cand_paise != grand_total_paise
+            ):
                 annotated_total_paise = cand_paise
             after_grand_total = False
             continue
@@ -602,8 +628,10 @@ def parse_receipt_text_and_boxes(
             pending_wrapped_parts.clear()
             continue
 
-        if _PAYMENT_TXN_RE.search(line) or any(k in lower for k in _TENDER_SKIP_KEYWORDS) or re.match(
-            rf"^(?:cash|card|change|paid)\s+{_CURR_SYM}?\s*\d", lower, re.IGNORECASE
+        if (
+            _PAYMENT_TXN_RE.search(line)
+            or any(k in lower for k in _TENDER_SKIP_KEYWORDS)
+            or re.match(rf"^(?:cash|card|change|paid)\s+{_CURR_SYM}?\s*\d", lower, re.IGNORECASE)
         ):
             pending_summary_key = None
             pending_wrapped_parts.clear()
@@ -645,8 +673,12 @@ def parse_receipt_text_and_boxes(
                 continue
             amt, _ = _extract_amount_paise_from_line(line)
             if amt is not None:
-                lines_sum = sum(l.total_paise or 0 for l in parsed_lines)
-                if pending_summary_key == "subtotal" and lines_sum > 0 and abs(amt - lines_sum) <= 100:
+                lines_sum = sum(ln.total_paise or 0 for ln in parsed_lines)
+                if (
+                    pending_summary_key == "subtotal"
+                    and lines_sum > 0
+                    and abs(amt - lines_sum) <= 100
+                ):
                     subtotal_paise = amt
                     pending_summary_key = "cgst"
                 elif not (has_row_level_cgst and in_gst_summary_section):
@@ -663,7 +695,11 @@ def parse_receipt_text_and_boxes(
                 continue
             amt, _ = _extract_amount_paise_from_line(line)
             if amt is not None:
-                if pending_summary_key == "cgst" and tax_breakdown.cgst_paise is None and not (has_row_level_cgst and in_gst_summary_section):
+                if (
+                    pending_summary_key == "cgst"
+                    and tax_breakdown.cgst_paise is None
+                    and not (has_row_level_cgst and in_gst_summary_section)
+                ):
                     tax_breakdown.cgst_paise = amt
                     pending_summary_key = "sgst"
                 elif not (has_row_level_sgst and in_gst_summary_section):
@@ -699,8 +735,10 @@ def parse_receipt_text_and_boxes(
                 pending_wrapped_parts.clear()
                 continue
 
-        if any(k in lower for k in _TOTAL_KEYWORDS) and "subtotal" not in lower and not (
-            "item description" in lower or "hsn" in lower or "quantity" in lower
+        if (
+            any(k in lower for k in _TOTAL_KEYWORDS)
+            and "subtotal" not in lower
+            and not ("item description" in lower or "hsn" in lower or "quantity" in lower)
         ):
             amt, _ = _extract_amount_paise_from_line(line)
             if amt is not None:
@@ -729,7 +767,17 @@ def parse_receipt_text_and_boxes(
 
         if any(
             k in lower
-            for k in ("item description", "item &", "particulars", "hsn", "taxable", "cgst", "sgst", "amt.", "unit price")
+            for k in (
+                "item description",
+                "item &",
+                "particulars",
+                "hsn",
+                "taxable",
+                "cgst",
+                "sgst",
+                "amt.",
+                "unit price",
+            )
         ):
             seen_items_section = True
 
@@ -738,7 +786,10 @@ def parse_receipt_text_and_boxes(
             merchant_name is None
             and not seen_items_section
             and not any(k in lower for k in _HEADER_SKIP_KEYWORDS)
-            and not any(k in lower for k in ("amt.", "sr", "no.", "mrp/rsp", "disc.", "cess", "taxable", "value"))
+            and not any(
+                k in lower
+                for k in ("amt.", "sr", "no.", "mrp/rsp", "disc.", "cess", "taxable", "value")
+            )
             and not _GSTIN_RE.search(line)
             and not _DATE_RE.search(line)
             and sum(1 for c in line if c.isalpha()) >= 3
@@ -795,7 +846,8 @@ def parse_receipt_text_and_boxes(
                         []
                         if c_math_ok
                         else [
-                            f"Rate uncertain on '{clean_name}': {c_qty:g} x ₹{c_rate / 100:.2f} != ₹{c_total / 100:.2f} "
+                            f"Rate uncertain on '{clean_name}': "
+                            f"{c_qty:g} x ₹{c_rate / 100:.2f} != ₹{c_total / 100:.2f} "
                             f"(implied rate: ₹{implied_rate / 100:.2f}/{c_unit})."
                         ]
                     ),
@@ -898,9 +950,7 @@ def parse_receipt_text_and_boxes(
                 clean_name = clean_name.replace(mult_match.group(0), " ")
             clean_name = _clean_item_name(clean_name) or remaining
 
-            unit_price_paise = (
-                round(amount_paise / qty) if qty and qty > 0 else amount_paise
-            )
+            unit_price_paise = round(amount_paise / qty) if qty and qty > 0 else amount_paise
             target_lines.append(
                 ExtractedReceiptLine(
                     raw_text=line,
@@ -945,27 +995,33 @@ def parse_receipt_text_and_boxes(
         else:
             pending_wrapped_parts.clear()
 
-    candidate_row_count = max(len(fallback_lines), len(parsed_lines)) if use_table_lines else len(parsed_lines)
+    candidate_row_count = (
+        max(len(fallback_lines), len(parsed_lines)) if use_table_lines else len(parsed_lines)
+    )
 
     # Automatic recovery: if spatial TableIR rows fail reconciliation against grand_total_paise
-    # OR if TableIR severely under-extracted (<=2 rows when >=4 candidate rows exist), recover with fallback_lines.
+    # OR if TableIR dropped more than half the candidate rows, recover with fallback_lines.
     if use_table_lines and parsed_lines and fallback_lines:
         should_recover = False
-        table_sum = sum(l.total_paise or 0 for l in parsed_lines)
-        fallback_sum = sum(l.total_paise or 0 for l in fallback_lines)
+        table_sum = sum(ln.total_paise or 0 for ln in parsed_lines)
+        fallback_sum = sum(ln.total_paise or 0 for ln in fallback_lines)
         table_reconciled = (
-            (
-                grand_total_paise is not None
-                and abs(table_sum - grand_total_paise) <= max(200, int(0.02 * max(grand_total_paise, 1)))
-            )
-            or (
-                subtotal_paise is not None
-                and abs(table_sum - subtotal_paise) <= max(200, int(0.02 * max(subtotal_paise, 1)))
-            )
+            grand_total_paise is not None
+            and abs(table_sum - grand_total_paise)
+            <= max(200, int(0.02 * max(grand_total_paise, 1)))
+        ) or (
+            subtotal_paise is not None
+            and abs(table_sum - subtotal_paise) <= max(200, int(0.02 * max(subtotal_paise, 1)))
         )
-        if not table_reconciled and len(parsed_lines) <= 2 and len(fallback_lines) >= max(4, len(parsed_lines) * 2):
+        if (
+            not table_reconciled
+            and len(parsed_lines) <= 2
+            and len(fallback_lines) >= max(4, len(parsed_lines) * 2)
+        ):
             should_recover = True
-        elif grand_total_paise is not None and not table_reconciled:
+        elif grand_total_paise is not None:
+            table_sum = sum(ln.total_paise or 0 for ln in parsed_lines)
+            fallback_sum = sum(ln.total_paise or 0 for ln in fallback_lines)
             table_diff = abs(table_sum - grand_total_paise)
             fallback_diff = abs(fallback_sum - grand_total_paise)
             if (
@@ -994,8 +1050,9 @@ def parse_receipt_text_and_boxes(
 
     if annotated_total_paise is not None and grand_total_paise is not None:
         warnings.append(
-            f"Printed grand total (₹{grand_total_paise / 100:.2f}) has nearby handwritten/ambiguous "
-            f"annotation (₹{annotated_total_paise / 100:.2f}); verify the final paid amount."
+            f"Printed grand total (₹{grand_total_paise / 100:.2f}) has nearby "
+            f"handwritten/ambiguous annotation (₹{annotated_total_paise / 100:.2f}); "
+            "verify the final paid amount."
         )
     if cancelled_row_count > 0:
         warnings.append(f"Excluded {cancelled_row_count} explicitly cancelled row(s) from bill.")
@@ -1003,23 +1060,23 @@ def parse_receipt_text_and_boxes(
     # Aggregate table-level tax & totals when table rows provide per-line breakdown
     if use_table_lines and parsed_lines:
         if tax_breakdown.cgst_paise is None:
-            line_cgst = [l.cgst_paise for l in parsed_lines if l.cgst_paise is not None]
+            line_cgst = [ln.cgst_paise for ln in parsed_lines if ln.cgst_paise is not None]
             if line_cgst:
                 tax_breakdown.cgst_paise = sum(line_cgst)
         if tax_breakdown.sgst_paise is None:
-            line_sgst = [l.sgst_paise for l in parsed_lines if l.sgst_paise is not None]
+            line_sgst = [ln.sgst_paise for ln in parsed_lines if ln.sgst_paise is not None]
             if line_sgst:
                 tax_breakdown.sgst_paise = sum(line_sgst)
         if tax_breakdown.igst_paise is None:
-            line_igst = [l.igst_paise for l in parsed_lines if l.igst_paise is not None]
+            line_igst = [ln.igst_paise for ln in parsed_lines if ln.igst_paise is not None]
             if line_igst:
                 tax_breakdown.igst_paise = sum(line_igst)
         if cess_paise is None:
-            line_cess = [l.cess_paise for l in parsed_lines if l.cess_paise is not None]
+            line_cess = [ln.cess_paise for ln in parsed_lines if ln.cess_paise is not None]
             if line_cess:
                 cess_paise = sum(line_cess)
         if taxable_paise is None:
-            line_taxable = [l.taxable_paise for l in parsed_lines if l.taxable_paise is not None]
+            line_taxable = [ln.taxable_paise for ln in parsed_lines if ln.taxable_paise is not None]
             if line_taxable:
                 taxable_paise = sum(line_taxable)
 

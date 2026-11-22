@@ -98,7 +98,8 @@ async def test_api_strips_hallucinated_availability_context_leaks_and_false_expi
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Even if an LLM returns 'expiring', '100 pcs' spinach, or claims missing items are available,
-    the backend strips context leaks, repairs units, verifies expiry claims, and excludes non-food."""
+    the backend strips context leaks, repairs units, verifies expiry claims,
+    and excludes non-food."""
     tok = jwks_provider.make_token(sub="user_ground_1", email="ground@example.com", name="Ground")
     headers = {"Authorization": f"Bearer {tok}"}
     assert (await client.get("/api/v1/auth/me", headers=headers)).status_code == 200
@@ -108,21 +109,34 @@ async def test_api_strips_hallucinated_availability_context_leaks_and_false_expi
         await client.post(
             "/api/v1/catalog/items",
             headers=headers,
-            json={"name": "Green Cucumber (Sowthekaayi)", "category": "vegetable", "default_base_unit": "pcs"},
+            json={
+                "name": "Green Cucumber (Sowthekaayi)",
+                "category": "vegetable",
+                "default_base_unit": "pcs",
+            },
         )
     ).json()
     cat_match = (
         await client.post(
             "/api/v1/catalog/items",
             headers=headers,
-            json={"name": "Happy Mail Matchbox", "category": "non_food", "default_base_unit": "pcs"},
+            json={
+                "name": "Happy Mail Matchbox",
+                "category": "non_food",
+                "default_base_unit": "pcs",
+            },
         )
     ).json()
     soon = (datetime.now(UTC).date() + timedelta(days=1)).isoformat()
     await client.post(
         "/api/v1/inventory/lots",
         headers=headers,
-        json={"canonical_item_id": cat_cuc["id"], "remaining_qty": 2, "base_unit": "pcs", "expires_on": soon},
+        json={
+            "canonical_item_id": cat_cuc["id"],
+            "remaining_qty": 2,
+            "base_unit": "pcs",
+            "expires_on": soon,
+        },
     )
     await client.post(
         "/api/v1/inventory/lots",
@@ -141,9 +155,18 @@ async def test_api_strips_hallucinated_availability_context_leaks_and_false_expi
                     "servings": 2,
                     "prep_minutes": 25,
                     "available_ingredients": [
-                        {"name": "Spinach", "quantity": "100", "base_unit": "pcs", "status": "available"},
+                        {
+                            "name": "Spinach",
+                            "quantity": "100",
+                            "base_unit": "pcs",
+                            "status": "available",
+                        },
                         {"name": "expiring", "quantity": "1 pcs", "status": "available"},
-                        {"name": "available household inventory", "quantity": "1 pcs", "status": "available"},
+                        {
+                            "name": "available household inventory",
+                            "quantity": "1 pcs",
+                            "status": "available",
+                        },
                     ],
                     "missing_ingredients": [],
                     "steps": ["Cook spinach."],
@@ -164,11 +187,15 @@ async def test_api_strips_hallucinated_availability_context_leaks_and_false_expi
             ],
             "follow_up_questions": [],
         }
-        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(payload)}}]})
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": json.dumps(payload)}}]}
+        )
 
     monkeypatch.setattr(
         "app.modules.recipes.service._build_provider",
-        lambda _s: HuggingFaceRecipeProvider(hf_token="hf_test", transport=httpx.MockTransport(bad_hf_response)),
+        lambda _s: HuggingFaceRecipeProvider(
+            hf_token="hf_test", transport=httpx.MockTransport(bad_hf_response)
+        ),
     )
 
     chat = (
@@ -184,7 +211,8 @@ async def test_api_strips_hallucinated_availability_context_leaks_and_false_expi
     assert chat["suggestions"][0]["recommendation_type"] == "COOK_NOW"
     assert chat["suggestions"][0]["uses_expiring_items"] == ["Cucumber"]
 
-    # Chickpea Skillet: context leaks stripped, Spinach moved to missing with '100 g', false expiry stripped!
+    # Chickpea Skillet: context leaks stripped, Spinach moved to missing with '100 g', false
+    # expiry stripped!
     skillet = chat["suggestions"][1]
     assert skillet["recommendation_type"] == "REQUIRES_SHOPPING"
     assert skillet["available_ingredients"] == []

@@ -213,7 +213,9 @@ async def test_phase4b4_evaluation_creation_guard_and_dedup(temp_db_url: str) ->
         spell_med = 0
         for raw, exp_norm in SPELLING_CASES:
             res = await resolve_ingredient_identity(db, raw_name=raw)
-            actual = id_to_norm.get(res.matched_ingredient_id) if res.matched_ingredient_id else None
+            actual = (
+                id_to_norm.get(res.matched_ingredient_id) if res.matched_ingredient_id else None
+            )
             if res.tier == "high" and actual == exp_norm:
                 spell_high += 1
             elif res.tier == "medium" and actual == exp_norm:
@@ -224,7 +226,9 @@ async def test_phase4b4_evaluation_creation_guard_and_dedup(temp_db_url: str) ->
         ocr_med = 0
         for raw, exp_norm in OCR_CASES:
             res = await resolve_ingredient_identity(db, raw_name=raw)
-            actual = id_to_norm.get(res.matched_ingredient_id) if res.matched_ingredient_id else None
+            actual = (
+                id_to_norm.get(res.matched_ingredient_id) if res.matched_ingredient_id else None
+            )
             if res.tier == "high" and actual == exp_norm:
                 ocr_high += 1
             elif res.tier == "medium" and actual == exp_norm:
@@ -234,7 +238,9 @@ async def test_phase4b4_evaluation_creation_guard_and_dedup(temp_db_url: str) ->
         multi_high = 0
         for raw, exp_norm in MULTILINGUAL_CASES:
             res = await resolve_ingredient_identity(db, raw_name=raw)
-            actual = id_to_norm.get(res.matched_ingredient_id) if res.matched_ingredient_id else None
+            actual = (
+                id_to_norm.get(res.matched_ingredient_id) if res.matched_ingredient_id else None
+            )
             if res.tier == "high" and actual == exp_norm:
                 multi_high += 1
 
@@ -289,12 +295,16 @@ async def test_phase4b4_evaluation_creation_guard_and_dedup(temp_db_url: str) ->
         await db.flush()
         chana_dal = (
             await db.execute(
-                select(CanonicalIngredient).where(CanonicalIngredient.normalized_name == "chana_dal")
+                select(CanonicalIngredient).where(
+                    CanonicalIngredient.normalized_name == "chana_dal"
+                )
             )
         ).scalar_one()
         dry = await dry_run_ingredient_merge(db, survivor_id=chana_dal.id, duplicate_id=dup_ing.id)
         assert dry.compatible is True
-        rec = await merge_canonical_ingredients(db, survivor_id=chana_dal.id, duplicate_id=dup_ing.id)
+        rec = await merge_canonical_ingredients(
+            db, survivor_id=chana_dal.id, duplicate_id=dup_ing.id
+        )
         await rollback_canonical_ingredient_merge(db, record=rec)
         assert (await db.get(CanonicalIngredient, dup_ing.id)).is_active is True
 

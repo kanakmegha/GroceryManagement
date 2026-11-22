@@ -116,10 +116,18 @@ async def test_ingredient_duplicate_discovery_merge_rollback_and_isolation(
 
         # Map distinct CanonicalItems (hh1 & hh2) + inventory lot
         prod_hh1 = CanonicalItem(
-            household_id=hh1.id, slug="desi-tomato", name="Desi Tomato 1kg", category="vegetable", default_base_unit="g"
+            household_id=hh1.id,
+            slug="desi-tomato",
+            name="Desi Tomato 1kg",
+            category="vegetable",
+            default_base_unit="g",
         )
         prod_hh2 = CanonicalItem(
-            household_id=hh2.id, slug="hybrid-tomato", name="Hybrid Tomato 1kg", category="vegetable", default_base_unit="g"
+            household_id=hh2.id,
+            slug="hybrid-tomato",
+            name="Hybrid Tomato 1kg",
+            category="vegetable",
+            default_base_unit="g",
         )
         db.add_all([prod_hh1, prod_hh2])
         await db.flush()
@@ -142,15 +150,24 @@ async def test_ingredient_duplicate_discovery_merge_rollback_and_isolation(
         ).scalar_one()
 
         await confirm_ingredient_mapping(
-            db, household_id=hh1.id, canonical_item_id=prod_hh1.id, canonical_ingredient_id=dup_ing.id
+            db,
+            household_id=hh1.id,
+            canonical_item_id=prod_hh1.id,
+            canonical_ingredient_id=dup_ing.id,
         )
         await confirm_ingredient_mapping(
-            db, household_id=hh2.id, canonical_item_id=prod_hh2.id, canonical_ingredient_id=surv_ing.id
+            db,
+            household_id=hh2.id,
+            canonical_item_id=prod_hh2.id,
+            canonical_ingredient_id=surv_ing.id,
         )
         await db.commit()
 
-        # 13, 15, 16: Merge dup_ing -> surv_ing; CanonicalItems, mappings, household isolation, and lots preserved
-        rec = await merge_canonical_ingredients(db, survivor_id=surv_ing.id, duplicate_id=dup_ing.id)
+        # 13, 15, 16: Merge dup_ing -> surv_ing; CanonicalItems, mappings, household isolation,
+        # and lots preserved
+        rec = await merge_canonical_ingredients(
+            db, survivor_id=surv_ing.id, duplicate_id=dup_ing.id
+        )
         await db.commit()
 
         assert (await db.get(CanonicalIngredient, dup_ing.id)).is_active is False

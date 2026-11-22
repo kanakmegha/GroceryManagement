@@ -21,7 +21,12 @@ from app.infra.ocr.table_ir import (
 
 # Ordered from most specific (composite labels, percentage sub-columns) to generic.
 _HEADER_PATTERNS: list[tuple[ColumnRole, re.Pattern[str]]] = [
-    ("sr_no", re.compile(r"^(?:sr\.?\s*no\.?|sl\.?\s*no\.?|s\.?\s*no\.?|si\.?\s*no\.?|sr\.?|sl\.?|#)$", re.I)),
+    (
+        "sr_no",
+        re.compile(
+            r"^(?:sr\.?\s*no\.?|sl\.?\s*no\.?|s\.?\s*no\.?|si\.?\s*no\.?|sr\.?|sl\.?|#)$", re.I
+        ),
+    ),
     ("hsn", re.compile(r"\bhsn(?:/sac)?(?:\s*code)?\b|\bsac(?:\s*code)?\b", re.I)),
     (
         "description",
@@ -32,10 +37,25 @@ _HEADER_PATTERNS: list[tuple[ColumnRole, re.Pattern[str]]] = [
     ),
     ("mrp", re.compile(r"\b(?:unit\s*)?(?:mrp|rsp|list\s*price)(?:/rsp)?\b", re.I)),
     ("unit_taxable", re.compile(r"\bunit\s*taxable(?:\s*(?:val(?:ue)?|amt|amount))?\b", re.I)),
-    ("cgst_pct", re.compile(r"\bcgst\s*(?:rate\s*\(%\)|rate|%)(?!.*\b(?:amt|amount|val(?:ue)?)\b)", re.I)),
-    ("sgst_pct", re.compile(r"\b(?:sgst|utgst|s/ut\s*gst)(?:/\s*utgst)?\s*(?:rate\s*\(%\)|rate|%)(?!.*\b(?:amt|amount|val(?:ue)?)\b)", re.I)),
-    ("igst_pct", re.compile(r"\bigst\s*(?:rate\s*\(%\)|rate|%)(?!.*\b(?:amt|amount|val(?:ue)?)\b)", re.I)),
-    ("cess_pct", re.compile(r"\bcess\s*(?:rate\s*\(%\)|rate|%)(?!.*\b(?:amt|amount|val(?:ue)?)\b)", re.I)),
+    (
+        "cgst_pct",
+        re.compile(r"\bcgst\s*(?:rate\s*\(%\)|rate|%)(?!.*\b(?:amt|amount|val(?:ue)?)\b)", re.I),
+    ),
+    (
+        "sgst_pct",
+        re.compile(
+            r"\b(?:sgst|utgst|s/ut\s*gst)(?:/\s*utgst)?\s*(?:rate\s*\(%\)|rate|%)(?!.*\b(?:amt|amount|val(?:ue)?)\b)",
+            re.I,
+        ),
+    ),
+    (
+        "igst_pct",
+        re.compile(r"\bigst\s*(?:rate\s*\(%\)|rate|%)(?!.*\b(?:amt|amount|val(?:ue)?)\b)", re.I),
+    ),
+    (
+        "cess_pct",
+        re.compile(r"\bcess\s*(?:rate\s*\(%\)|rate|%)(?!.*\b(?:amt|amount|val(?:ue)?)\b)", re.I),
+    ),
     ("tax_pct", re.compile(r"^(?:rate\s*\(%\)|tax\s*rate)$", re.I)),
     ("discount_pct", re.compile(r"\b(?:disc(?:ount)?\s*(?:\(%\)|%)|%\s*disc(?:ount)?)\b", re.I)),
     (
@@ -51,7 +71,12 @@ _HEADER_PATTERNS: list[tuple[ColumnRole, re.Pattern[str]]] = [
     ("discount", re.compile(r"\b(?:disc(?:ount)?(?:/margin)?(?:\s*(?:amt|amount|val))?)\b", re.I)),
     ("taxable", re.compile(r"\btaxable(?:\s*(?:val(?:ue)?|amt|amount))?\b", re.I)),
     ("cgst", re.compile(r"\bcgst(?:\s*(?:amt|amount|val(?:ue)?))?\b", re.I)),
-    ("sgst", re.compile(r"\b(?:sgst|utgst|s/ut\s*gst)(?:/\s*utgst)?(?:\s*(?:amt|amount|val(?:ue)?))?\b", re.I)),
+    (
+        "sgst",
+        re.compile(
+            r"\b(?:sgst|utgst|s/ut\s*gst)(?:/\s*utgst)?(?:\s*(?:amt|amount|val(?:ue)?))?\b", re.I
+        ),
+    ),
     ("igst", re.compile(r"\bigst(?:\s*(?:amt|amount|val(?:ue)?))?\b", re.I)),
     ("cess", re.compile(r"\bcess(?:\s*(?:amt|amount|val(?:ue)?))?\b", re.I)),
     ("gst", re.compile(r"\b(?:gst|vat|tax)\b", re.I)),
@@ -66,12 +91,63 @@ _HEADER_PATTERNS: list[tuple[ColumnRole, re.Pattern[str]]] = [
 ]
 
 _HEADER_FRAGMENT_WORDS = {
-    "sr", "sl", "si", "no", "no.", "item", "tem", "&", "description", "descripton", "particulars", "hsn", "sac",
-    "code", "unit", "uom", "mrp", "rsp", "mrp/rsp", "qty", "aty", "quantity", "qnty", "guant", "quant", "product",
-    "rate", "rate(%)", "price", "price*", "taxable", "value", "value*", "gross", "disc",
-    "disc.", "discount", "discount/", "margin", "margin*", "other", "charges", "charges**",
-    "cgst", "sgst", "utgst", "sgst/", "s/utgst", "s/ut", "igst", "cess", "gst", "amt",
-    "amt.", "amount", "total", "%",
+    "sr",
+    "sl",
+    "si",
+    "no",
+    "no.",
+    "item",
+    "tem",
+    "&",
+    "description",
+    "descripton",
+    "particulars",
+    "hsn",
+    "sac",
+    "code",
+    "unit",
+    "uom",
+    "mrp",
+    "rsp",
+    "mrp/rsp",
+    "qty",
+    "aty",
+    "quantity",
+    "qnty",
+    "guant",
+    "quant",
+    "product",
+    "rate",
+    "rate(%)",
+    "price",
+    "price*",
+    "taxable",
+    "value",
+    "value*",
+    "gross",
+    "disc",
+    "disc.",
+    "discount",
+    "discount/",
+    "margin",
+    "margin*",
+    "other",
+    "charges",
+    "charges**",
+    "cgst",
+    "sgst",
+    "utgst",
+    "sgst/",
+    "s/utgst",
+    "s/ut",
+    "igst",
+    "cess",
+    "gst",
+    "amt",
+    "amt.",
+    "amount",
+    "total",
+    "%",
 }
 
 _TABLE_STOP_RE = re.compile(
@@ -84,10 +160,14 @@ _TABLE_STOP_RE = re.compile(
 )
 
 _SECTION_DIVIDER_RE = re.compile(r"^[^0-9]*(?:={2,}|[-=]{2,}>?|-{3,})\s*$")
-_EXPLICIT_CANCELLED_RE = re.compile(r"^(?:\[?\s*(?:cancelled|void|strike)\s*\]?\b|~~.+~~\s*$)", re.I)
+_EXPLICIT_CANCELLED_RE = re.compile(
+    r"^(?:\[?\s*(?:cancelled|void|strike)\s*\]?\b|~~.+~~\s*$)", re.I
+)
 _CROSSED_OUT_RE = re.compile(r"^(?:~~|~{1,2}\s*[^~]|\[?\s*(?:cancelled|void|strike)\s*\]?\b)", re.I)
 
-_ROW_TERMINATOR_RE = re.compile(r"\b(?:\d+\s*days?\s*retu[rnmu]{1,3}|non[\s-]*returnable|returnable)\b", re.I)
+_ROW_TERMINATOR_RE = re.compile(
+    r"\b(?:\d+\s*days?\s*retu[rnmu]{1,3}|non[\s-]*returnable|returnable)\b", re.I
+)
 _TOTAL_FOOTER_RE = re.compile(r"^(?:total|net\s*total|bill\s*total|gross\s*total)\s*:?$", re.I)
 _SR_NO_RE = re.compile(r"^(\d{1,3})[.)]?$")
 _HSN_RE = re.compile(r"^\d{4,8}$")
@@ -187,7 +267,9 @@ def _match_column_role(text: str) -> ColumnRole | None:
 
 
 def _merge_adjacent_header_tokens(line: list[OcrTokenBox]) -> list[OcrTokenBox]:
-    """Merge tightly spaced word tokens on a single header row (e.g. 'Item' + 'Description', 'CGST' + '%')."""
+    """Merge tightly spaced word tokens on a single header row (e.g. 'Item' + 'Description', 'CGST'
+    + '%').
+    """
     if len(line) <= 1:
         return line
     merged: list[OcrTokenBox] = [line[0].model_copy()]
@@ -197,12 +279,23 @@ def _merge_adjacent_header_tokens(line: list[OcrTokenBox]) -> list[OcrTokenBox]:
         prev_role = _match_column_role(prev.text)
         tok_role = _match_column_role(tok.text)
         if prev_role is not None and tok_role is not None and prev_role != tok_role:
-            # Allow 'Unit' + 'MRP/RSP' -> 'mrp', 'Unit' + 'Price*' -> 'rate', 'CGST' + 'Rate(%)' -> 'cgst_pct'
+            # Allow 'Unit' + 'MRP/RSP' -> 'mrp', 'Unit' + 'Price*' -> 'rate', 'CGST' + 'Rate(%)'
+            # -> 'cgst_pct'
             combined_test = f"{prev.text.strip()} {tok.text.strip()}"
             combined_role_test = _match_column_role(combined_test)
             if not (
                 gap <= 0.015
-                and combined_role_test in {"mrp", "unit_taxable", "rate", "cgst_pct", "sgst_pct", "igst_pct", "cess_pct", "discount_pct"}
+                and combined_role_test
+                in {
+                    "mrp",
+                    "unit_taxable",
+                    "rate",
+                    "cgst_pct",
+                    "sgst_pct",
+                    "igst_pct",
+                    "cess_pct",
+                    "discount_pct",
+                }
             ):
                 merged.append(tok.model_copy())
                 continue
@@ -238,7 +331,10 @@ def _is_header_like_line(line: list[OcrTokenBox]) -> bool:
     hits = 0
     for b in line:
         words = [w.strip(".,:*()") for w in b.text.lower().split()]
-        if any(w in _HEADER_FRAGMENT_WORDS for w in words) or _match_column_role(b.text) is not None:
+        if (
+            any(w in _HEADER_FRAGMENT_WORDS for w in words)
+            or _match_column_role(b.text) is not None
+        ):
             hits += 1
     return hits >= 1 and hits >= max(1, len(line) // 2)
 
@@ -247,7 +343,9 @@ def _detect_multiline_header(
     lines: list[list[OcrTokenBox]],
     start_idx: int,
 ) -> tuple[list[_ColSpec], int]:
-    """Inspect 1..3 consecutive header lines and vertically stack tokens by x-overlap into columns."""
+    """Inspect 1..3 consecutive header lines and vertically stack tokens by x-overlap into
+    columns.
+    """
     first_line = lines[start_idx]
     if not _is_header_like_line(first_line):
         return [], 0
@@ -269,7 +367,8 @@ def _detect_multiline_header(
         else:
             break
 
-    # Stack tokens across header_rows into vertical header columns by x-overlap or x_center proximity
+    # Stack tokens across header_rows into vertical header columns by x-overlap or x_center
+    # proximity
     stacks: list[list[OcrTokenBox]] = []
     for tok in header_rows[0]:
         stacks.append([tok])
@@ -300,9 +399,13 @@ def _detect_multiline_header(
         role = _match_column_role(combined_text)
         if role is None:
             continue
-        # If a tax/discount column appears twice (e.g. 'CGST' then 'CGST Amt.'), reclassify the first as *_pct
+        # If a tax/discount column appears twice (e.g. 'CGST' then 'CGST Amt.'), reclassify the
+        # first as *_pct
         if role in seen_roles and role in {"cgst", "sgst", "igst", "cess", "discount"}:
-            if re.search(r"\b(?:amt\.?|amount|val(?:ue)?)\b", combined_text, re.I) or "amt." in combined_text.lower():
+            if (
+                re.search(r"\b(?:amt\.?|amount|val(?:ue)?)\b", combined_text, re.I)
+                or "amt." in combined_text.lower()
+            ):
                 for prev_c in cols:
                     if prev_c.role == role:
                         prev_c.role = f"{role}_pct"  # type: ignore[assignment]
@@ -334,7 +437,9 @@ def _refine_column_bounds(
     body_lines: list[list[OcrTokenBox]],
     vertical_grid_xs: list[float] | None = None,
 ) -> list[_ColSpec]:
-    """Infer column boundaries using visual vertical grid lines, header positions, and data alignment."""
+    """Infer column boundaries using visual vertical grid lines, header positions, and data
+    alignment.
+    """
     ordered = sorted(cols, key=lambda c: c.x_center)
     for idx, col in enumerate(ordered):
         col.column_id = idx
@@ -372,11 +477,7 @@ def _refine_column_bounds(
         if left_col.role == "description" and left_col.x_right < right_col.x_center - 0.01:
             min_gx = max(min_gx, left_col.x_right - 0.01)
         max_gx = min(right_col.x_right - 0.01, right_col.x_center - 0.01)
-        grid_candidates = [
-            gx
-            for gx in (vertical_grid_xs or [])
-            if min_gx <= gx <= max_gx
-        ]
+        grid_candidates = [gx for gx in (vertical_grid_xs or []) if min_gx <= gx <= max_gx]
         if grid_candidates:
             boundary = min(grid_candidates, key=lambda gx: abs(gx - default_mid))
         elif left_col.role == "description" and right_col.role in numeric_roles:
@@ -417,7 +518,11 @@ def _assign_token_to_column(box: OcrTokenBox, cols: list[_ColSpec]) -> _ColSpec:
         assigned = min(cols, key=lambda c: abs(c.x_center - center))
 
     # A serial-number column never holds alphabetic description words (e.g. 'Pouch', 'Carton').
-    if assigned.role == "sr_no" and any(ch.isalpha() for ch in box.text) and not _SR_NO_RE.match(box.text.strip()):
+    if (
+        assigned.role == "sr_no"
+        and any(ch.isalpha() for ch in box.text)
+        and not _SR_NO_RE.match(box.text.strip())
+    ):
         desc_cols = [c for c in cols if c.role == "description"]
         if desc_cols:
             return min(desc_cols, key=lambda c: abs(c.x_center - center))
@@ -430,7 +535,9 @@ def _extract_cell_amount_paise(tokens: list[str], *, allow_signed: bool = False)
     joined = " ".join(tokens).strip()
     if not joined:
         return None
-    joined = re.sub(r"(\d)\s*(?:₹|Rs\.?|INR|USD|EUR|GBP|AED|\$|€|£)\s*(\d)", r"\1 \2", joined, flags=re.I)
+    joined = re.sub(
+        r"(\d)\s*(?:₹|Rs\.?|INR|USD|EUR|GBP|AED|\$|€|£)\s*(\d)", r"\1 \2", joined, flags=re.I
+    )
     non_pct_parts = [part for part in joined.split() if not _PCT_TOKEN_RE.match(part)]
     for candidate in reversed(non_pct_parts):
         parsed = parse_inr_to_paise(candidate, allow_signed=allow_signed)
@@ -574,7 +681,11 @@ def _pending_to_ir_row(
             key=lambda b: (b.page, round(b.y_center, 3), b.x),
         )
         avg_conf = sum(b.confidence for b in c_boxes) / len(c_boxes) if c_boxes else 1.0
-        cell_text = " ".join(b.text.strip() for b in c_boxes if b.text.strip()) if c_boxes else " ".join(tokens).strip()
+        cell_text = (
+            " ".join(b.text.strip() for b in c_boxes if b.text.strip())
+            if c_boxes
+            else " ".join(tokens).strip()
+        )
         ir_cells[col_id] = TableCellIR(
             document_id=document_id,
             page_number=pending.page,
@@ -608,15 +719,25 @@ def _ir_row_to_extracted_line(row: TableRowIR) -> ExtractedReceiptLine | None:
     desc = " ".join(by_role.get("description", [])).strip()
     desc = _ROW_TERMINATOR_RE.sub("", desc)
     desc = re.sub(r"\s{2,}", " ", desc).strip(" -|")
-    if _SECTION_DIVIDER_RE.match(desc) or _EXPLICIT_CANCELLED_RE.match(desc) or _EXPLICIT_CANCELLED_RE.match(row.raw_text.strip()):
+    if (
+        _SECTION_DIVIDER_RE.match(desc)
+        or _EXPLICIT_CANCELLED_RE.match(desc)
+        or _EXPLICIT_CANCELLED_RE.match(row.raw_text.strip())
+    ):
         return None
-    if _TOTAL_FOOTER_RE.match(desc) or _TABLE_STOP_RE.search(desc) or _TABLE_STOP_RE.search(row.raw_text):
+    if (
+        _TOTAL_FOOTER_RE.match(desc)
+        or _TABLE_STOP_RE.search(desc)
+        or _TABLE_STOP_RE.search(row.raw_text)
+    ):
         return None
 
     recovered_from_misalignment = False
     if not desc:
         raw_first = row.raw_text.splitlines()[0].strip() if row.raw_text else ""
-        alpha_prefix = re.match(r"^(?:\d+\s+)?([A-Za-z][A-Za-z0-9\s\-./()]{1,40}?)(?=\s+\d|\s*$)", raw_first)
+        alpha_prefix = re.match(
+            r"^(?:\d+\s+)?([A-Za-z][A-Za-z0-9\s\-./()]{1,40}?)(?=\s+\d|\s*$)", raw_first
+        )
         if alpha_prefix:
             desc = alpha_prefix.group(1).strip(" -|")
             recovered_from_misalignment = True
@@ -681,7 +802,8 @@ def _ir_row_to_extracted_line(row: TableRowIR) -> ExtractedReceiptLine | None:
     if uncertain_crossout:
         uncertain_fields.append("crossout")
         row_warnings.append(
-            f"Possible crossed-out or handwritten mark on '{desc}'; verify whether this item was purchased."
+            f"Possible crossed-out or handwritten mark on '{desc}'; verify whether this "
+            "item was purchased."
         )
     if (
         has_explicit_unit_price
@@ -698,7 +820,8 @@ def _ir_row_to_extracted_line(row: TableRowIR) -> ExtractedReceiptLine | None:
             uncertain_fields.append("unit_price")
             unit_lbl = unit_text or "unit"
             row_warnings.append(
-                f"Rate uncertain on '{desc}': {qty_val:g} x ₹{rate_paise / 100:.2f} != ₹{total_paise / 100:.2f} "
+                f"Rate uncertain on '{desc}': {qty_val:g} x ₹{rate_paise / 100:.2f} != "
+                f"₹{total_paise / 100:.2f} "
                 f"(implied rate: ₹{suggested_unit_price_paise / 100:.2f}/{unit_lbl})."
             )
 
@@ -759,7 +882,9 @@ def _split_gap_lines_between_anchors(
     prev_anchor_y: float | None,
     next_anchor_y: float | None,
 ) -> tuple[list[_ClassifiedLine], list[_ClassifiedLine]]:
-    """Assign wrapped lines between two numeric anchor rows using terminators and largest vertical y-gap."""
+    """Assign wrapped lines between two numeric anchor rows using terminators and largest vertical
+    y-gap.
+    """
     if not gap_lines:
         return [], []
     if prev_anchor_y is None:
@@ -794,7 +919,9 @@ def extract_table_rows(
     document_id: str = "doc_1",
     vertical_grid_xs: list[float] | None = None,
 ) -> TableExtractionResult:
-    """Detect semantic invoice tables, build TableIR, and extract multi-line/multi-page item rows."""
+    """Detect semantic invoice tables, build TableIR, and extract multi-line/multi-page item
+    rows.
+    """
     if not boxes:
         return TableExtractionResult()
 
@@ -875,7 +1002,10 @@ def extract_table_rows(
             len(distinct_roles) >= 3
             and (
                 "description" in distinct_roles
-                or ("hsn" in distinct_roles and bool(distinct_roles & {"qty", "rate", "mrp", "gross", "discount"}))
+                or (
+                    "hsn" in distinct_roles
+                    and bool(distinct_roles & {"qty", "rate", "mrp", "gross", "discount"})
+                )
             )
             and bool(distinct_roles & {"qty", "rate", "mrp", "taxable", "total"})
         )
@@ -1024,17 +1154,31 @@ def extract_table_rows(
 
         has_sr_no = any(_SR_NO_RE.match(b.text.strip()) for b in role_boxes.get("sr_no", []))
         has_hsn = any(_HSN_RE.match(b.text.strip()) for b in role_boxes.get("hsn", []))
-        has_total = _extract_cell_amount_paise([b.text for b in role_boxes.get("total", [])]) is not None
-        has_rate = _extract_cell_amount_paise([b.text for b in role_boxes.get("rate", [])]) is not None
-        has_taxable = _extract_cell_amount_paise([b.text for b in role_boxes.get("taxable", [])]) is not None
-        has_mrp = _extract_cell_amount_paise([b.text for b in role_boxes.get("mrp", [])]) is not None
+        has_total = (
+            _extract_cell_amount_paise([b.text for b in role_boxes.get("total", [])]) is not None
+        )
+        has_rate = (
+            _extract_cell_amount_paise([b.text for b in role_boxes.get("rate", [])]) is not None
+        )
+        has_taxable = (
+            _extract_cell_amount_paise([b.text for b in role_boxes.get("taxable", [])]) is not None
+        )
+        has_mrp = (
+            _extract_cell_amount_paise([b.text for b in role_boxes.get("mrp", [])]) is not None
+        )
         has_qty = any(re.search(r"\d", b.text) for b in role_boxes.get("qty", []))
 
-        is_anchor = has_total or has_hsn or has_mrp or has_rate or has_taxable or (has_sr_no and has_qty)
+        is_anchor = (
+            has_total or has_hsn or has_mrp or has_rate or has_taxable or (has_sr_no and has_qty)
+        )
         is_numeric_subrow = (
             not is_anchor
             and not desc_text
-            and all(_NUMERIC_ONLY_RE.match(b.text.strip()) or b.text.strip() in {"+", "-", "|"} for b in line if b.text.strip())
+            and all(
+                _NUMERIC_ONLY_RE.match(b.text.strip()) or b.text.strip() in {"+", "-", "|"}
+                for b in line
+                if b.text.strip()
+            )
         )
         is_row_terminator = bool(_ROW_TERMINATOR_RE.search(line_text))
 

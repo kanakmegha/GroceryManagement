@@ -1,16 +1,14 @@
 """Phase 6.2.1 & 6.2.2 tests: Recipe availability breakdown and product-aware pantry units."""
 
+import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-import uuid
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import build_async_engine, build_session_maker
-from app.modules.auth.models import Household, User
 from app.modules.inventory.ingredient_aggregation_service import (
     convert_to_target_unit,
     get_ingredient_inventory_summary,
@@ -31,9 +29,27 @@ from app.modules.recipes.grounding import classify_recommendation_type, reconcil
 @pytest.mark.asyncio
 async def test_phase6_2_1_recipe_availability_and_quantity_comparison() -> None:
     inv = [
-        {"canonical_item_id": str(uuid.uuid4()), "name": "Rice", "qty": 500.0, "base_unit": "g", "confirmed_ingredient": True},
-        {"canonical_item_id": str(uuid.uuid4()), "name": "Toor Dal", "qty": 0.1, "base_unit": "kg", "confirmed_ingredient": True},
-        {"canonical_item_id": str(uuid.uuid4()), "name": "Milk", "qty": 1.0, "base_unit": "bottle", "confirmed_ingredient": True},
+        {
+            "canonical_item_id": str(uuid.uuid4()),
+            "name": "Rice",
+            "qty": 500.0,
+            "base_unit": "g",
+            "confirmed_ingredient": True,
+        },
+        {
+            "canonical_item_id": str(uuid.uuid4()),
+            "name": "Toor Dal",
+            "qty": 0.1,
+            "base_unit": "kg",
+            "confirmed_ingredient": True,
+        },
+        {
+            "canonical_item_id": str(uuid.uuid4()),
+            "name": "Milk",
+            "qty": 1.0,
+            "base_unit": "bottle",
+            "confirmed_ingredient": True,
+        },
     ]
 
     # 1. Sufficient quantity -> available
@@ -54,14 +70,17 @@ async def test_phase6_2_1_recipe_availability_and_quantity_comparison() -> None:
     assert r_ghee is not None
     assert r_ghee["status"] == "missing"
 
-    # 4. Incompatible unit (bottle vs ml) -> partial, unit_compatible=False (never falsely available)
+    # 4. Incompatible unit (bottle vs ml) -> partial, unit_compatible=False (never falsely
+    # available)
     r_milk = reconcile_ingredient({"name": "Milk", "required_qty": "250", "base_unit": "ml"}, inv)
     assert r_milk is not None
     assert r_milk["status"] == "partial"
     assert r_milk["unit_compatible"] is False
 
     # 5. Optional missing ingredient does not block COOK_NOW
-    r_opt = reconcile_ingredient({"name": "Coriander", "required_qty": "10", "base_unit": "g"}, inv, is_optional=True)
+    r_opt = reconcile_ingredient(
+        {"name": "Coriander", "required_qty": "10", "base_unit": "g"}, inv, is_optional=True
+    )
     assert r_opt is not None
     assert classify_recommendation_type([r_rice, r_opt], [], inv) == "COOK_NOW"
 
@@ -111,13 +130,20 @@ async def test_phase6_2_2_pantry_edit_preserves_ledger_and_rejects_cross_dimensi
     engine = build_async_engine(temp_db_url)
     session_factory = build_session_maker(engine)
     async with session_factory() as db:  # type: AsyncSession
-        async def _get_or_create_ing(name: str, norm: str, cat: str, std_unit: str) -> CanonicalIngredient:
+
+        async def _get_or_create_ing(
+            name: str, norm: str, cat: str, std_unit: str
+        ) -> CanonicalIngredient:
             existing = (
-                await db.execute(select(CanonicalIngredient).where(CanonicalIngredient.normalized_name == norm))
+                await db.execute(
+                    select(CanonicalIngredient).where(CanonicalIngredient.normalized_name == norm)
+                )
             ).scalar_one_or_none()
             if existing is not None:
                 return existing
-            created = CanonicalIngredient(name=name, normalized_name=norm, category=cat, standard_unit=std_unit)
+            created = CanonicalIngredient(
+                name=name, normalized_name=norm, category=cat, standard_unit=std_unit
+            )
             db.add(created)
             await db.flush()
             return created
@@ -127,21 +153,88 @@ async def test_phase6_2_2_pantry_edit_preserves_ledger_and_rejects_cross_dimensi
         c_ing_eggs = await _get_or_create_ing("Eggs", "eggs", "dairy", "pcs")
         c_ing_biscuits = await _get_or_create_ing("Biscuits", "biscuits", "snacks", "pcs")
 
-        item_rice = CanonicalItem(household_id=hh_id, slug=f"rice-{uuid.uuid4().hex[:6]}", name="Basmati Rice", category="grains", default_base_unit="g")
-        item_milk = CanonicalItem(household_id=hh_id, slug=f"milk-{uuid.uuid4().hex[:6]}", name="Toned Milk", category="dairy", default_base_unit="ml")
-        item_eggs = CanonicalItem(household_id=hh_id, slug=f"eggs-{uuid.uuid4().hex[:6]}", name="Farm Eggs", category="dairy", default_base_unit="pcs")
-        item_biscuits = CanonicalItem(household_id=hh_id, slug=f"biscuits-{uuid.uuid4().hex[:6]}", name="Marie Biscuits", category="snacks", default_base_unit="pcs")
-        item_biscuits_pcs = CanonicalItem(household_id=hh_id, slug=f"biscuits-pcs-{uuid.uuid4().hex[:6]}", name="Marie Biscuits Loose", category="snacks", default_base_unit="pcs")
+        item_rice = CanonicalItem(
+            household_id=hh_id,
+            slug=f"rice-{uuid.uuid4().hex[:6]}",
+            name="Basmati Rice",
+            category="grains",
+            default_base_unit="g",
+        )
+        item_milk = CanonicalItem(
+            household_id=hh_id,
+            slug=f"milk-{uuid.uuid4().hex[:6]}",
+            name="Toned Milk",
+            category="dairy",
+            default_base_unit="ml",
+        )
+        item_eggs = CanonicalItem(
+            household_id=hh_id,
+            slug=f"eggs-{uuid.uuid4().hex[:6]}",
+            name="Farm Eggs",
+            category="dairy",
+            default_base_unit="pcs",
+        )
+        item_biscuits = CanonicalItem(
+            household_id=hh_id,
+            slug=f"biscuits-{uuid.uuid4().hex[:6]}",
+            name="Marie Biscuits",
+            category="snacks",
+            default_base_unit="pcs",
+        )
+        item_biscuits_pcs = CanonicalItem(
+            household_id=hh_id,
+            slug=f"biscuits-pcs-{uuid.uuid4().hex[:6]}",
+            name="Marie Biscuits Loose",
+            category="snacks",
+            default_base_unit="pcs",
+        )
         db.add_all([item_rice, item_milk, item_eggs, item_biscuits, item_biscuits_pcs])
         await db.flush()
 
-        db.add_all([
-            IngredientMapping(household_id=hh_id, canonical_item_id=item_rice.id, canonical_ingredient_id=c_ing_rice.id, matching_confidence=Decimal("1.0"), mapping_source="manual", user_confirmed=True),
-            IngredientMapping(household_id=hh_id, canonical_item_id=item_milk.id, canonical_ingredient_id=c_ing_milk.id, matching_confidence=Decimal("1.0"), mapping_source="manual", user_confirmed=True),
-            IngredientMapping(household_id=hh_id, canonical_item_id=item_eggs.id, canonical_ingredient_id=c_ing_eggs.id, matching_confidence=Decimal("1.0"), mapping_source="manual", user_confirmed=True),
-            IngredientMapping(household_id=hh_id, canonical_item_id=item_biscuits.id, canonical_ingredient_id=c_ing_biscuits.id, matching_confidence=Decimal("1.0"), mapping_source="manual", user_confirmed=True),
-            IngredientMapping(household_id=hh_id, canonical_item_id=item_biscuits_pcs.id, canonical_ingredient_id=c_ing_biscuits.id, matching_confidence=Decimal("1.0"), mapping_source="manual", user_confirmed=True),
-        ])
+        db.add_all(
+            [
+                IngredientMapping(
+                    household_id=hh_id,
+                    canonical_item_id=item_rice.id,
+                    canonical_ingredient_id=c_ing_rice.id,
+                    matching_confidence=Decimal("1.0"),
+                    mapping_source="manual",
+                    user_confirmed=True,
+                ),
+                IngredientMapping(
+                    household_id=hh_id,
+                    canonical_item_id=item_milk.id,
+                    canonical_ingredient_id=c_ing_milk.id,
+                    matching_confidence=Decimal("1.0"),
+                    mapping_source="manual",
+                    user_confirmed=True,
+                ),
+                IngredientMapping(
+                    household_id=hh_id,
+                    canonical_item_id=item_eggs.id,
+                    canonical_ingredient_id=c_ing_eggs.id,
+                    matching_confidence=Decimal("1.0"),
+                    mapping_source="manual",
+                    user_confirmed=True,
+                ),
+                IngredientMapping(
+                    household_id=hh_id,
+                    canonical_item_id=item_biscuits.id,
+                    canonical_ingredient_id=c_ing_biscuits.id,
+                    matching_confidence=Decimal("1.0"),
+                    mapping_source="manual",
+                    user_confirmed=True,
+                ),
+                IngredientMapping(
+                    household_id=hh_id,
+                    canonical_item_id=item_biscuits_pcs.id,
+                    canonical_ingredient_id=c_ing_biscuits.id,
+                    matching_confidence=Decimal("1.0"),
+                    mapping_source="manual",
+                    user_confirmed=True,
+                ),
+            ]
+        )
 
         now = datetime.now(UTC)
         purchase = Purchase(
@@ -172,11 +265,53 @@ async def test_phase6_2_2_pantry_edit_preserves_ledger_and_rejects_cross_dimensi
         )
         db.add(p_item)
 
-        lot_rice = InventoryLot(household_id=hh_id, canonical_item_id=item_rice.id, initial_qty=Decimal("1000.000"), remaining_qty=Decimal("1000.000"), base_unit="g", purchased_at=now, expires_on=date.today() + timedelta(days=90), lot_status="active")
-        lot_milk = InventoryLot(household_id=hh_id, canonical_item_id=item_milk.id, initial_qty=Decimal("1000.000"), remaining_qty=Decimal("1000.000"), base_unit="ml", purchased_at=now, expires_on=date.today() + timedelta(days=5), lot_status="active")
-        lot_eggs = InventoryLot(household_id=hh_id, canonical_item_id=item_eggs.id, initial_qty=Decimal("12.000"), remaining_qty=Decimal("12.000"), base_unit="pcs", purchased_at=now, lot_status="active")
-        lot_bisc_pack = InventoryLot(household_id=hh_id, canonical_item_id=item_biscuits.id, initial_qty=Decimal("200.000"), remaining_qty=Decimal("200.000"), base_unit="g", purchased_at=now, lot_status="active")
-        lot_bisc_pcs = InventoryLot(household_id=hh_id, canonical_item_id=item_biscuits_pcs.id, initial_qty=Decimal("5.000"), remaining_qty=Decimal("5.000"), base_unit="pcs", purchased_at=now, lot_status="active")
+        lot_rice = InventoryLot(
+            household_id=hh_id,
+            canonical_item_id=item_rice.id,
+            initial_qty=Decimal("1000.000"),
+            remaining_qty=Decimal("1000.000"),
+            base_unit="g",
+            purchased_at=now,
+            expires_on=date.today() + timedelta(days=90),
+            lot_status="active",
+        )
+        lot_milk = InventoryLot(
+            household_id=hh_id,
+            canonical_item_id=item_milk.id,
+            initial_qty=Decimal("1000.000"),
+            remaining_qty=Decimal("1000.000"),
+            base_unit="ml",
+            purchased_at=now,
+            expires_on=date.today() + timedelta(days=5),
+            lot_status="active",
+        )
+        lot_eggs = InventoryLot(
+            household_id=hh_id,
+            canonical_item_id=item_eggs.id,
+            initial_qty=Decimal("12.000"),
+            remaining_qty=Decimal("12.000"),
+            base_unit="pcs",
+            purchased_at=now,
+            lot_status="active",
+        )
+        lot_bisc_pack = InventoryLot(
+            household_id=hh_id,
+            canonical_item_id=item_biscuits.id,
+            initial_qty=Decimal("200.000"),
+            remaining_qty=Decimal("200.000"),
+            base_unit="g",
+            purchased_at=now,
+            lot_status="active",
+        )
+        lot_bisc_pcs = InventoryLot(
+            household_id=hh_id,
+            canonical_item_id=item_biscuits_pcs.id,
+            initial_qty=Decimal("5.000"),
+            remaining_qty=Decimal("5.000"),
+            base_unit="pcs",
+            purchased_at=now,
+            lot_status="active",
+        )
         db.add_all([lot_rice, lot_milk, lot_eggs, lot_bisc_pack, lot_bisc_pcs])
         await db.commit()
 
@@ -227,7 +362,11 @@ async def test_phase6_2_2_pantry_edit_preserves_ledger_and_rejects_cross_dimensi
     async with session_factory() as db:
         p_row = await db.get(PurchaseItem, p_item_id)
         assert p_row is not None
-        assert p_row.normalized_qty == Decimal("1000.000") and p_row.base_unit == "g" and p_row.pack_size == "1 kg"
+        assert (
+            p_row.normalized_qty == Decimal("1000.000")
+            and p_row.base_unit == "g"
+            and p_row.pack_size == "1 kg"
+        )
 
         lot_row = await db.get(InventoryLot, lot_rice_id)
         assert lot_row is not None
@@ -236,11 +375,20 @@ async def test_phase6_2_2_pantry_edit_preserves_ledger_and_rejects_cross_dimensi
         egg_ing_row = await db.get(CanonicalIngredient, eggs_ing_id)
         assert egg_ing_row is not None and egg_ing_row.name == "Eggs"  # No partial rename
 
-        ledgers = (await db.execute(select(StockLedger).where(StockLedger.lot_id == lot_rice_id))).scalars().all()
-        assert any(l.event_type == "ADJUSTMENT_OUT" and l.quantity_delta == Decimal("-500.000") for l in ledgers)
+        ledgers = (
+            (await db.execute(select(StockLedger).where(StockLedger.lot_id == lot_rice_id)))
+            .scalars()
+            .all()
+        )
+        assert any(
+            led.event_type == "ADJUSTMENT_OUT" and led.quantity_delta == Decimal("-500.000")
+            for led in ledgers
+        )
 
         summary = await get_ingredient_inventory_summary(db, hh_id)
-        bisc_summary = next(i for i in summary.ingredients if i.canonical_ingredient_id == bisc_ing_id)
+        bisc_summary = next(
+            i for i in summary.ingredients if i.canonical_ingredient_id == bisc_ing_id
+        )
         # Incompatible dimensions (g vs pcs) must NOT be aggregated together
         assert len(bisc_summary.unit_groups) == 2
 

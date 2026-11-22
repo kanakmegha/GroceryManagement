@@ -50,8 +50,7 @@ class JWKSCache:
         async with self._lock:
             now = time.monotonic()
             cache_valid = (
-                self._fetched_at is not None
-                and (now - self._fetched_at) < self._ttl_seconds
+                self._fetched_at is not None and (now - self._fetched_at) < self._ttl_seconds
             )
             if cache_valid and kid in self._keys:
                 return self._keys[kid]
@@ -60,9 +59,7 @@ class JWKSCache:
                 self._last_refresh_attempt_at is None
                 or (now - self._last_refresh_attempt_at) >= self._refresh_cooldown_seconds
             )
-            if (not cache_valid or can_refresh) and (
-                can_refresh or self._fetched_at is None
-            ):
+            if (not cache_valid or can_refresh) and (can_refresh or self._fetched_at is None):
                 await self._refresh_locked(now)
 
             return self._keys.get(kid)
@@ -235,11 +232,7 @@ async def get_current_claims(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> ClerkClaims:
-    if (
-        credentials is None
-        or credentials.scheme.lower() != "bearer"
-        or not credentials.credentials
-    ):
+    if credentials is None or credentials.scheme.lower() != "bearer" or not credentials.credentials:
         raise AppError(
             status_code=401,
             code="UNAUTHORIZED",

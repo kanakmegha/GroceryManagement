@@ -5,9 +5,7 @@ from __future__ import annotations
 import re
 
 _EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
-_PHONE_RE = re.compile(
-    r"(?:(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{3,5}\)?[\s.-]?)?\d{3,5}[\s.-]?\d{4,5})"
-)
+_PHONE_RE = re.compile(r"(?:(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{3,5}\)?[\s.-]?)?\d{3,5}[\s.-]?\d{4,5})")
 _ADDRESS_LABEL_RE = re.compile(
     r"^(?:deliver(?:y|ed)?\s+to|ship\s+to|billing\s+address|shipping\s+address|address)\s*[:\-]",
     re.IGNORECASE,
@@ -67,7 +65,22 @@ def redact_pii_text(text: str) -> tuple[str, list[str]]:
         elif (
             not has_money
             and _PINCODE_LINE_RE.search(line)
-            and any(k in lower for k in ("road", "street", "lane", "apt", "flat", "floor", "sector", "nagar", "layout", "cross", "main"))
+            and any(
+                k in lower
+                for k in (
+                    "road",
+                    "street",
+                    "lane",
+                    "apt",
+                    "flat",
+                    "floor",
+                    "sector",
+                    "nagar",
+                    "layout",
+                    "cross",
+                    "main",
+                )
+            )
         ):
             line = "[REDACTED_ADDRESS_LINE]"
             redacted_types.add("address")
