@@ -1,13 +1,13 @@
 import asyncio
 from logging.config import fileConfig
 
-from sqlalchemy import pool
+from sqlalchemy import String, inspect, pool, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 from app.core.config import get_settings
-from app.core.db import Base
+from app.core.db import Base, normalize_database_url
 from app.modules.auth import models as _auth_models  # noqa: F401
 
 config = context.config
@@ -21,9 +21,19 @@ target_metadata = Base.metadata
 def _get_database_url() -> str:
     configured = config.get_main_option("sqlalchemy.url")
     if configured:
-        return configured
+        return normalize_database_url(configured)
     settings = get_settings()
-    return settings.DATABASE_MIGRATION_URL or settings.DATABASE_URL
+    return normalize_database_url(settings.DATABASE_MIGRATION_URL or settings.DATABASE_URL)
+
+
+def _configure_version_column_width() -> None:
+    """Widen alembic_version.version_num from default VARCHAR(32) to VARCHAR(64).
+
+    Revision 0018_purchase_item_resolution_meta is 34 characters, which PostgreSQL
+    strictly rejects under Alembic's default 32-character limit.
+    """
+    migration_ctx = context.get_context()
+    migration_ctx._version.c.version_num.type = String(64)
 
 
 def run_migrations_offline() -> None:
@@ -34,6 +44,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
+    _configure_version_column_width()
 
     with context.begin_transaction():
         context.run_migrations()
@@ -41,8 +52,15 @@ def run_migrations_offline() -> None:
 
 def do_run_migrations(connection: Connection) -> None:
     context.configure(connection=connection, target_metadata=target_metadata)
+    _configure_version_column_width()
 
     with context.begin_transaction():
+        if connection.dialect.name == "postgresql" and inspect(connection).has_table(
+            "alembic_version"
+        ):
+            connection.execute(
+                text("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(64)")
+            )
         context.run_migrations()
 
 

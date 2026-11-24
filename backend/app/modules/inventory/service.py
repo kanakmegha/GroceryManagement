@@ -137,6 +137,204 @@ async def allocate_fefo(
     return deductions
 
 
+_UNIT_FAMILY_SCALE: dict[str, tuple[str, Decimal]] = {
+    "g": ("mass", Decimal("1")),
+    "kg": ("mass", Decimal("1000")),
+    "ml": ("volume", Decimal("1")),
+    "l": ("volume", Decimal("1000")),
+    "pcs": ("count", Decimal("1")),
+    "dozen": ("count", Decimal("12")),
+}
+
+
+def _convert_compatible_unit(qty: Decimal, from_unit: str | None, to_unit: str | None) -> Decimal | None:
+    """Convert qty within the same physical dimension only; return None across dimensions."""
+    f = (from_unit or "").strip().lower()
+    t = (to_unit or "").strip().lower()
+    if not f or not t:
+        return None
+    if f == t:
+        return qty
+    f_info = _UNIT_FAMILY_SCALE.get(f)
+    t_info = _UNIT_FAMILY_SCALE.get(t)
+    if f_info is None or t_info is None or f_info[0] != t_info[0]:
+        return None
+    return (qty * f_info[1]) / t_info[1]
+
+
+@dataclass(frozen=True, slots=True)
+class BatchFEFORequest:
+    canonical_item_id: UUID
+    required_qty: Decimal
+    base_unit: str | None = None
+    event_type: str = "COOK_OUT"
+    notes: str | None = None
+
+
+async def batch_allocate_fefo(
+    db: AsyncSession,
+    *,
+    household_id: UUID,
+    requests: list[BatchFEFORequest],
+    actor_user_id: UUID,
+    reference_type: str | None = None,
+    reference_id: UUID | None = None,
+    today: date | None = None,
+) -> list[tuple[BatchFEFORequest, list[FEFODeduction]]]:
+    """Allocate and deduct stock across multiple items in FEFO order with one batched lot query."""
+    if not requests:
+        return []
+
+    ref_today = today or datetime.now(UTC).date()
+    positive_cids = sorted(
+        {req.canonical_item_id for req in requests if req.required_qty > Decimal("0")},
+        key=str,
+    )
+    if not positive_cids:
+        return [(req, []) for req in requests]
+
+    if _is_postgresql(db):
+        for cid in positive_cids:
+            lock_key = f"{household_id}:{cid}"
+            await db.execute(
+                text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"),
+                {"lock_key": lock_key},
+            )
+
+    stmt = (
+        select(InventoryLot)
+        .where(
+            InventoryLot.household_id == household_id,
+            InventoryLot.canonical_item_id.in_(positive_cids),
+            InventoryLot.lot_status == "active",
+            InventoryLot.remaining_qty > Decimal("0"),
+            or_(InventoryLot.expires_on.is_(None), InventoryLot.expires_on >= ref_today),
+        )
+        .order_by(
+            InventoryLot.canonical_item_id.asc(),
+            InventoryLot.expires_on.asc().nulls_last(),
+            InventoryLot.purchased_at.asc(),
+            InventoryLot.id.asc(),
+        )
+    )
+    if _is_postgresql(db):
+        stmt = stmt.with_for_update()
+
+    lots = list((await db.execute(stmt)).scalars().all())
+    lots_by_cid: dict[UUID, list[InventoryLot]] = {}
+    for lot in lots:
+        lots_by_cid.setdefault(lot.canonical_item_id, []).append(lot)
+
+    pending_entries: list[
+        tuple[BatchFEFORequest, list[tuple[StockLedger, UUID, UUID, Decimal, str]]]
+    ] = []
+    for req in requests:
+        if req.required_qty <= Decimal("0"):
+            pending_entries.append((req, []))
+            continue
+
+        req_unit = (req.base_unit or "").strip().lower() or None
+        item_lots = [
+            lot
+            for lot in lots_by_cid.get(req.canonical_item_id, [])
+            if lot.remaining_qty > Decimal("0")
+            and (
+                req_unit is None
+                or _convert_compatible_unit(Decimal("1"), lot.base_unit, req_unit) is not None
+            )
+        ]
+        if req_unit is not None:
+            total_available = sum(
+                (
+                    _convert_compatible_unit(lot.remaining_qty, lot.base_unit, req_unit)
+                    or Decimal("0")
+                    for lot in item_lots
+                ),
+                Decimal("0"),
+            )
+        else:
+            total_available = sum((lot.remaining_qty for lot in item_lots), Decimal("0"))
+        if total_available < req.required_qty:
+            raise AppError(
+                status_code=409,
+                code="INSUFFICIENT_STOCK",
+                message=(
+                    f"Insufficient active stock for item {req.canonical_item_id}: "
+                    f"requested {req.required_qty}"
+                    f"{f' {req_unit}' if req_unit else ''}, "
+                    f"available {total_available}"
+                    f"{f' {req_unit}' if req_unit else ''}."
+                ),
+                details={
+                    "canonical_item_id": str(req.canonical_item_id),
+                    "requested_qty": str(req.required_qty),
+                    "available_qty": str(total_available),
+                    "base_unit": req_unit,
+                },
+            )
+
+        remaining_to_deduct = req.required_qty
+        req_entries: list[tuple[StockLedger, UUID, UUID, Decimal, str]] = []
+        for lot in item_lots:
+            if remaining_to_deduct <= Decimal("0"):
+                break
+            if req_unit is not None:
+                lot_avail_in_req = _convert_compatible_unit(
+                    lot.remaining_qty, lot.base_unit, req_unit
+                )
+                if lot_avail_in_req is None or lot_avail_in_req <= Decimal("0"):
+                    continue
+                take_in_req = min(lot_avail_in_req, remaining_to_deduct)
+                take = _convert_compatible_unit(take_in_req, req_unit, lot.base_unit)
+                if take is None or take <= Decimal("0"):
+                    continue
+                take = min(lot.remaining_qty, take.quantize(Decimal("0.001")))
+                remaining_to_deduct -= take_in_req
+            else:
+                take = min(lot.remaining_qty, remaining_to_deduct)
+                remaining_to_deduct -= take
+            lot.remaining_qty = lot.remaining_qty - take
+            if lot.remaining_qty == Decimal("0"):
+                lot.lot_status = "depleted"
+
+            ledger_entry = StockLedger(
+                household_id=household_id,
+                lot_id=lot.id,
+                canonical_item_id=req.canonical_item_id,
+                event_type=req.event_type,
+                quantity_delta=-take,
+                base_unit=lot.base_unit,
+                balance_after_lot=lot.remaining_qty,
+                unit_cost_paise=lot.unit_cost_paise,
+                reference_type=reference_type,
+                reference_id=reference_id,
+                actor_user_id=actor_user_id,
+                notes=req.notes,
+            )
+            db.add(ledger_entry)
+            req_entries.append((ledger_entry, lot.id, req.canonical_item_id, take, lot.base_unit))
+
+        pending_entries.append((req, req_entries))
+
+    await db.flush()
+
+    results: list[tuple[BatchFEFORequest, list[FEFODeduction]]] = []
+    for req, req_entries in pending_entries:
+        deductions = [
+            FEFODeduction(
+                lot_id=lot_id,
+                canonical_item_id=cid,
+                deducted_qty=take,
+                base_unit=base_unit,
+                ledger_entry_id=ledger_entry.id,
+            )
+            for ledger_entry, lot_id, cid, take, base_unit in req_entries
+        ]
+        results.append((req, deductions))
+
+    return results
+
+
 async def get_inventory_summary(
     db: AsyncSession,
     household_id: UUID,

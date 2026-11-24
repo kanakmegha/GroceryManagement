@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.core.db import get_db
+from app.core.errors import AppError
 from app.core.tenancy import HouseholdContext, get_household_context
 from app.modules.recipes.schemas import (
     HouseholdRecipePreferencesIn,
@@ -14,16 +15,20 @@ from app.modules.recipes.schemas import (
     RecipeChatResponse,
     RecipeFeedbackIn,
     RecipeFeedbackOut,
+    RecipeRecommendationOut,
     RecipeRecommendationsResponse,
     RecipeReferencesResponse,
+    RecommendationModeUpdateRequest,
 )
 from app.modules.recipes.service import (
     _invoke_discover_references,
     chat_recipes,
+    get_catalogue_recipe_detail,
     get_household_recipe_preferences,
     get_recipe_recommendations,
     list_recipe_feedback,
     record_recipe_feedback,
+    update_recommendation_mode,
     upsert_household_recipe_preferences,
 )
 
@@ -77,6 +82,20 @@ async def save_recipe_preferences(
     return await upsert_household_recipe_preferences(db, ctx.household.id, payload)
 
 
+@router.patch("/preferences/recommendation-mode", response_model=HouseholdRecipePreferencesOut)
+async def patch_recommendation_mode(
+    payload: RecommendationModeUpdateRequest,
+    ctx: HouseholdContext = Depends(get_household_context),
+    db: AsyncSession = Depends(get_db),
+) -> HouseholdRecipePreferencesOut:
+    return await update_recommendation_mode(
+        db,
+        ctx.household.id,
+        recommendation_mode=payload.recommendation_mode,
+        dismiss_personalisation_prompt=payload.dismiss_personalisation_prompt,
+    )
+
+
 @router.get("/feedback", response_model=list[RecipeFeedbackOut])
 async def get_recipe_feedback(
     ctx: HouseholdContext = Depends(get_household_context),
@@ -118,3 +137,14 @@ async def recipe_references(
 ) -> RecipeReferencesResponse:
     refs = await _invoke_discover_references(q, limit=limit)
     return RecipeReferencesResponse(items=refs)
+
+
+@router.get("/catalogue/{recipe_id}", response_model=RecipeRecommendationOut)
+async def catalogue_recipe_detail(
+    recipe_id: str,
+    ctx: HouseholdContext = Depends(get_household_context),
+) -> RecipeRecommendationOut:
+    detail = get_catalogue_recipe_detail(recipe_id)
+    if detail is None:
+        raise AppError(status_code=404, code="NOT_FOUND", message="Recipe not found.")
+    return detail

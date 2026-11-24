@@ -1,4 +1,5 @@
 import inspect
+import logging
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -31,6 +32,8 @@ from app.modules.recipes.schemas import (
     RecipeReferenceOut,
     RecipeStepOut,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _get_hf_provider_cls() -> Any:
@@ -201,6 +204,7 @@ async def _invoke_provider(
     preference_tags: list[str] | None = None,
     preference_profile: dict[str, Any] | None = None,
     tool_executor: Any = None,
+    timeout_seconds: float | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     meta: dict[str, Any] = {
         "provider_status": "live",
@@ -234,6 +238,8 @@ async def _invoke_provider(
             call_kwargs["preference_profile"] = preference_profile
         if "tool_executor" in sig.parameters and tool_executor is not None:
             call_kwargs["tool_executor"] = tool_executor
+        if "timeout_seconds" in sig.parameters and timeout_seconds is not None:
+            call_kwargs["timeout_seconds"] = timeout_seconds
         res = provider.generate_recipes(**call_kwargs)
         if inspect.isawaitable(res):
             res = await res
@@ -358,9 +364,26 @@ def invalidate_recipe_recommendations_cache(household_id: UUID | str) -> None:
 async def get_household_recipe_preferences(
     db: AsyncSession, household_id: UUID
 ) -> HouseholdRecipePreferencesOut:
+    from app.modules.recipes.preferences import (
+        PERSONALISATION_RECIPE_THRESHOLD,
+        count_distinct_completed_recipes,
+    )
+
     row = await db.get(HouseholdRecipePreference, household_id)
+    distinct_count = await count_distinct_completed_recipes(db, household_id)
     if row is None:
-        return HouseholdRecipePreferencesOut(household_id=household_id)
+        return HouseholdRecipePreferencesOut(
+            household_id=household_id,
+            distinct_completed_recipes=distinct_count,
+            should_show_personalisation_prompt=distinct_count >= PERSONALISATION_RECIPE_THRESHOLD,
+            personalisation_prompt_dismissed=False,
+        )
+    dismissed = row.personalisation_prompt_dismissed_at is not None
+    mode = (
+        row.recommendation_mode
+        if row.recommendation_mode in {"enjoyed", "new", "balanced"}
+        else "balanced"
+    )
     return HouseholdRecipePreferencesOut(
         household_id=row.household_id,
         timezone=row.timezone,
@@ -370,6 +393,12 @@ async def get_household_recipe_preferences(
         preferred_cuisines=list(row.preferred_cuisines or []),
         preferred_meal_types=list(row.preferred_meal_types or []),
         max_prep_minutes=row.max_prep_minutes,
+        recommendation_mode=mode,  # type: ignore[arg-type]
+        distinct_completed_recipes=distinct_count,
+        should_show_personalisation_prompt=(
+            distinct_count >= PERSONALISATION_RECIPE_THRESHOLD and not dismissed
+        ),
+        personalisation_prompt_dismissed=dismissed,
     )
 
 
@@ -389,6 +418,35 @@ async def upsert_household_recipe_preferences(
     row.preferred_cuisines = list(payload.preferred_cuisines)
     row.preferred_meal_types = list(payload.preferred_meal_types)
     row.max_prep_minutes = payload.max_prep_minutes
+    if payload.recommendation_mode is not None:
+        row.recommendation_mode = payload.recommendation_mode
+        if row.personalisation_prompt_dismissed_at is None:
+            row.personalisation_prompt_dismissed_at = datetime.now(UTC)
+    if payload.dismiss_personalisation_prompt:
+        row.personalisation_prompt_dismissed_at = datetime.now(UTC)
+    await db.commit()
+    await db.refresh(row)
+    invalidate_recipe_recommendations_cache(household_id)
+    return await get_household_recipe_preferences(db, household_id)
+
+
+async def update_recommendation_mode(
+    db: AsyncSession,
+    household_id: UUID,
+    *,
+    recommendation_mode: str | None = None,
+    dismiss_personalisation_prompt: bool | None = None,
+) -> HouseholdRecipePreferencesOut:
+    row = await db.get(HouseholdRecipePreference, household_id)
+    if row is None:
+        row = HouseholdRecipePreference(household_id=household_id)
+        db.add(row)
+    if recommendation_mode is not None:
+        row.recommendation_mode = recommendation_mode
+        if row.personalisation_prompt_dismissed_at is None:
+            row.personalisation_prompt_dismissed_at = datetime.now(UTC)
+    if dismiss_personalisation_prompt:
+        row.personalisation_prompt_dismissed_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(row)
     invalidate_recipe_recommendations_cache(household_id)
@@ -775,6 +833,12 @@ async def chat_recipes(
     settings: Settings,
     payload: RecipeChatRequest,
 ) -> RecipeChatResponse:
+    import time as _time
+
+    req_started = _time.monotonic()
+    timing_ms: dict[str, int] = {}
+
+    t_ctx_start = _time.monotonic()
     inventory_payload = await _load_active_inventory_payload(db, household_id)
     if not inventory_payload:
         return RecipeChatResponse(
@@ -801,20 +865,23 @@ async def chat_recipes(
     ]
 
     from app.modules.recipes.preferences import compute_household_preference_profile
-    from app.modules.recipes.tools import ReadOnlyChefToolset
 
     preference_profile = await compute_household_preference_profile(db, household_id)
-    toolset = ReadOnlyChefToolset(
-        db,
-        household_id,
-        equipment=payload.equipment,
-        dietary=dietary,
-        servings=payload.servings,
-        meal_type=payload.meal_type,
-        max_prep_minutes=payload.max_prep_minutes,
+    pref_row = await db.get(HouseholdRecipePreference, household_id) if db is not None else None
+    active_rec_mode = payload.recommendation_mode or (
+        pref_row.recommendation_mode
+        if pref_row and pref_row.recommendation_mode in {"enjoyed", "new", "balanced"}
+        else "balanced"
     )
+    preference_profile["recommendation_mode"] = active_rec_mode
+    timing_ms["pantry_context_ms"] = round((_time.monotonic() - t_ctx_start) * 1000)
+
+    # Coherent Ask Chef budget inside the 65s frontend timeout:
+    # Single-shot request (all context pre-loaded in user_payload; no multi-round tool calls).
+    ask_chef_timeout = min(55.0, max(float(settings.HF_TIMEOUT_SECONDS or 20.0), 50.0))
 
     provider = _build_provider(settings)
+    t_init_start = _time.monotonic()
     raw_recipes, meta = await _invoke_provider(
         provider,
         inventory_payload,
@@ -830,8 +897,78 @@ async def chat_recipes(
         hunger_level=payload.hunger_level,
         preference_tags=payload.preference_tags,
         preference_profile=preference_profile,
-        tool_executor=toolset,
+        timeout_seconds=ask_chef_timeout,
     )
+    timing_ms["initial_provider_ms"] = round((_time.monotonic() - t_init_start) * 1000)
+
+    from app.modules.recipes.quality_validator import validate_recipe_quality
+
+    # Validate before deciding on repair; derive steps from structured_steps first so
+    # complete recipes are not falsely flagged for repair.
+    t_val_start = _time.monotonic()
+    repair_ms = 0
+    if meta.get("provider_status") in {"live_hf", "live"} and raw_recipes:
+        failed_issues: list[str] = []
+        for rec in raw_recipes:
+            raw_ings = list(rec.get("ingredients") or [])
+            if not raw_ings:
+                raw_ings = [
+                    {**i, "is_optional": False}
+                    for i in (
+                        list(rec.get("available_ingredients") or [])
+                        + list(rec.get("partial_ingredients") or [])
+                        + list(rec.get("missing_ingredients") or [])
+                    )
+                ] + [{**i, "is_optional": True} for i in (rec.get("optional_ingredients") or [])]
+            steps_for_val = list(rec.get("steps") or rec.get("instructions") or [])
+            if not steps_for_val and rec.get("structured_steps"):
+                steps_for_val = [
+                    str(st.get("instruction") or "")
+                    for st in (rec.get("structured_steps") or [])
+                    if isinstance(st, dict) and str(st.get("instruction") or "").strip()
+                ]
+            q_check = validate_recipe_quality(
+                {**rec, "ingredients": raw_ings, "steps": steps_for_val},
+                strict_ai_generated=True,
+            )
+            if not q_check.is_valid:
+                failed_issues.extend(q_check.issues[:3])
+        timing_ms["quality_validation_ms"] = round((_time.monotonic() - t_val_start) * 1000)
+
+        elapsed_so_far = _time.monotonic() - req_started
+        if failed_issues and elapsed_so_far < 30.0:
+            t_repair_start = _time.monotonic()
+            repair_timeout = max(10.0, 55.0 - elapsed_so_far)
+            repair_msg = (
+                f"{payload.message}\n\n[QUALITY REPAIR]: Previous draft had incomplete execution "
+                f"details ({'; '.join(failed_issues[:4])}). Regenerate with complete quantities, "
+                "units, prep/cook times, difficulty, equipment_required, preparation_steps, and "
+                "detailed sequential structured_steps (heat_level, duration_minutes, cue)."
+            )
+            retry_recipes, retry_meta = await _invoke_provider(
+                provider,
+                inventory_payload,
+                limit=5,
+                message=repair_msg,
+                servings=payload.servings,
+                max_prep_minutes=payload.max_prep_minutes,
+                dietary=dietary,
+                conversation_history=history_payload,
+                recent_recipes=recent_recipes,
+                equipment=payload.equipment,
+                meal_type=payload.meal_type,
+                hunger_level=payload.hunger_level,
+                preference_tags=payload.preference_tags,
+                preference_profile=preference_profile,
+                timeout_seconds=repair_timeout,
+            )
+            repair_ms = round((_time.monotonic() - t_repair_start) * 1000)
+            if retry_recipes:
+                raw_recipes = retry_recipes
+                meta = retry_meta
+    else:
+        timing_ms["quality_validation_ms"] = round((_time.monotonic() - t_val_start) * 1000)
+    timing_ms["repair_provider_ms"] = repair_ms
 
     from app.modules.recipes.grounding import (
         classify_recommendation_type,
@@ -920,15 +1057,6 @@ async def chat_recipes(
         ]
         all_links.extend(links)
 
-        steps_list = [
-            str(s) for s in (rec.get("steps") or rec.get("instructions") or []) if str(s).strip()
-        ]
-        if not steps_list:
-            steps_list = [
-                f"Prepare and measure the ingredients for {title}.",
-                "Cook over medium heat until done, adjusting seasoning to taste.",
-                "Serve warm.",
-            ]
         raw_structured = rec.get("structured_steps") or []
         structured_steps_out = [
             RecipeStepOut(
@@ -936,27 +1064,55 @@ async def chat_recipes(
                 title=str(st.get("title") or f"Step {idx}"),
                 instruction=str(st.get("instruction") or ""),
                 ingredients_used=[str(x) for x in (st.get("ingredients_used") or [])],
+                ingredient_quantities={
+                    str(k): str(v) for k, v in (st.get("ingredient_quantities") or {}).items()
+                },
                 duration_minutes=st.get("duration_minutes"),
                 heat_level=st.get("heat_level"),
                 technique=st.get("technique"),
+                equipment=[str(x) for x in (st.get("equipment") or [])],
                 completion_cue=str(st.get("completion_cue") or ""),
+                caution=st.get("caution"),
+                next_action=st.get("next_action"),
             )
             for idx, st in enumerate(raw_structured, start=1)
             if isinstance(st, dict)
         ]
-        from app.modules.recipes.quality_validator import validate_recipe_quality
-
+        steps_list = [
+            str(s) for s in (rec.get("steps") or rec.get("instructions") or []) if str(s).strip()
+        ]
+        if not steps_list and structured_steps_out:
+            steps_list = [
+                st.instruction.strip() for st in structured_steps_out if st.instruction.strip()
+            ]
+        if not steps_list:
+            steps_list = [
+                f"Prepare and measure the ingredients for {title}.",
+                "Cook over medium heat until done, adjusting seasoning to taste.",
+                "Serve warm.",
+            ]
         q_res = validate_recipe_quality(
             {
                 **rec,
                 "ingredients": [
-                    {"name": i.name, "is_optional": not i.essential}
+                    {
+                        "name": i.name,
+                        "quantity": (
+                            f"{i.quantity} {i.base_unit}".strip()
+                            if i.base_unit and i.base_unit not in str(i.quantity)
+                            else i.quantity
+                        ),
+                        "is_optional": not i.essential,
+                    }
                     for i in (available_ings + partial_ings + missing_ings + optional_ings)
                 ],
                 "steps": steps_list,
                 "structured_steps": raw_structured,
-            }
+            },
+            strict_ai_generated=True,
         )
+        if not q_res.is_valid and rec_type == "COOK_NOW":
+            rec_type = "COOK_WITH_SUBSTITUTIONS"
         has_verified_ref = any(lnk.verified and lnk.url for lnk in links)
         src_type = "external_reference" if has_verified_ref else "ai_generated"
         src_label = (
@@ -987,8 +1143,12 @@ async def chat_recipes(
                 optional_ingredients=optional_ings,
                 substitutions=substitutions_list,
                 cooking_tips=[str(s) for s in (rec.get("cooking_tips") or [])],
+                troubleshooting_tips=[str(s) for s in (rec.get("troubleshooting_tips") or [])],
+                serving_result=rec.get("serving_result"),
                 food_safety_notes=[str(s) for s in (rec.get("food_safety_notes") or [])],
                 uses_expiring_items=verified_expiring_names,
+                equipment_required=[str(s) for s in (rec.get("equipment_required") or [])],
+                preparation_steps=[str(s) for s in (rec.get("preparation_steps") or [])],
                 instructions=steps_list,
                 structured_steps=structured_steps_out,
                 quality_warnings=q_res.issues,
@@ -996,15 +1156,36 @@ async def chat_recipes(
             )
         )
 
+    import re
+
     _rank_order = {"COOK_NOW": 0, "COOK_WITH_SUBSTITUTIONS": 1, "REQUIRES_SHOPPING": 2}
-    suggestions.sort(key=lambda s: _rank_order.get(s.recommendation_type, 2))
+    msg_tokens = {
+        t
+        for t in re.sub(r"[^a-z0-9\s]", " ", payload.message.lower()).split()
+        if len(t) >= 3 and t not in {"with", "and", "for", "make", "cook", "some", "recipe"}
+    }
+
+    def _suggestion_sort_key(
+        idx_and_sug: tuple[int, RecipeChatSuggestionOut],
+    ) -> tuple[int, int, int]:
+        idx, sug = idx_and_sug
+        title_tokens = {
+            t
+            for t in re.sub(r"[^a-z0-9\s]", " ", sug.title.lower()).split()
+            if len(t) >= 3
+        }
+        overlap = len(msg_tokens & title_tokens)
+        relevance_tier = 2 if overlap >= 2 else (1 if overlap == 1 else 0)
+        return (-relevance_tier, _rank_order.get(sug.recommendation_type, 2), idx)
+
+    suggestions = [s for _, s in sorted(enumerate(suggestions), key=_suggestion_sort_key)]
 
     reply = meta.get("reply") or (
         f"Here are {len(suggestions)} recipe ideas based on your current pantry."
         if suggestions
         else "I couldn't find matching recipes for your current inventory."
     )
-    return RecipeChatResponse(
+    response_obj = RecipeChatResponse(
         reply=str(reply),
         provider_status=str(meta.get("provider_status") or "live"),
         provider_message=meta.get("provider_message"),
@@ -1013,4 +1194,70 @@ async def chat_recipes(
         follow_up_questions=list(meta.get("follow_up_questions") or []),
         suggestions=suggestions,
         external_links=all_links[:4],
+    )
+    timing_ms["total_backend_ms"] = round((_time.monotonic() - req_started) * 1000)
+    logger.info(
+        "Ask Chef completed: status=%s suggestions=%d mode=%s timings=%s",
+        response_obj.provider_status,
+        len(suggestions),
+        active_rec_mode,
+        timing_ms,
+    )
+    return response_obj
+
+
+def get_catalogue_recipe_detail(recipe_id: str) -> RecipeRecommendationOut | None:
+    """Return full structured instructions and steps for a curated catalogue recipe_id."""
+    from app.modules.recipes.catalogue_data import EXPANDED_RECIPE_CATALOG
+
+    match = next((r for r in EXPANDED_RECIPE_CATALOG if r.get("recipe_id") == recipe_id), None)
+    if match is None:
+        return None
+
+    ingredients_out = [
+        RecipeIngredientOut(
+            name=str(ing.get("name") or ""),
+            required_qty=str(ing.get("quantity") or 0),
+            base_unit=str(ing.get("unit") or "g"),
+            is_optional=bool(ing.get("is_optional", False)),
+            status="available",
+            available_qty=None,
+            available_unit=None,
+        )
+        for ing in (match.get("ingredients") or [])
+    ]
+    raw_structured = list(match.get("structured_steps") or [])
+    structured_steps_out = [RecipeStepOut(**st) for st in raw_structured]
+    steps_list = [str(s) for s in (match.get("steps") or [])]
+
+    return RecipeRecommendationOut(
+        recipe_id=str(match["recipe_id"]),
+        title=str(match["title"]),
+        description=match.get("description"),
+        meal_type=match.get("meal_type"),
+        cuisine=match.get("cuisine"),
+        servings=int(match.get("servings") or 2),
+        prep_minutes=int(match.get("prep_minutes") or 15),
+        cook_minutes=match.get("cook_minutes"),
+        difficulty=match.get("difficulty"),
+        source_type="ai_generated",
+        source_label="Curated recipe",
+        recommendation_type="COOK_NOW",
+        why_recommended="Saved cooking plan recipe",
+        match_score=1.0,
+        matched_ingredients_count=len(ingredients_out),
+        total_required_ingredients_count=len(
+            [i for i in ingredients_out if not i.is_optional]
+        ),
+        uses_expiring_soon=False,
+        missing_ingredients=[],
+        insufficient_ingredients=[],
+        ingredients=ingredients_out,
+        instructions=steps_list,
+        structured_steps=structured_steps_out,
+        quality_warnings=[],
+        substitutions=[],
+        cooking_tips=[str(t) for t in (match.get("cooking_tips") or [])],
+        food_safety_notes=[str(n) for n in (match.get("food_safety_notes") or [])],
+        external_links=[],
     )

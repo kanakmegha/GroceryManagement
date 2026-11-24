@@ -37,6 +37,9 @@ class CompleteIngredientInput(BaseModel):
     actual_used_qty: Decimal | None = Field(default=None, ge=0)
     waste_qty: Decimal | None = Field(default=None, ge=0)
     omitted: bool = False
+    session_confirmed: bool = False
+    confirmed_qty: Decimal | None = Field(default=None, ge=0)
+    confirmed_unit: str | None = Field(default=None, max_length=16)
 
 
 class CompleteCookingPlanRequest(BaseModel):

@@ -268,3 +268,26 @@ async def test_discover_dishes_buckets_hidden_isolation_and_zero_mutations(
         ).scalar_one()
         assert lots_after == lots_before
         assert ledger_after == ledger_before
+
+
+@pytest.mark.asyncio
+async def test_catalogue_recipe_detail_resolves_real_instructions_without_bookkeeping(
+    client: httpx.AsyncClient,
+    jwks_provider: EphemeralJWKSProvider,
+) -> None:
+    token = jwks_provider.make_token(sub="user_cat_detail", email="cd@example.com", name="CD")
+    headers = {"Authorization": f"Bearer {token}"}
+    me = await client.get("/api/v1/auth/me", headers=headers)
+    assert me.status_code == 200
+    headers["X-Household-Id"] = me.json()["active_household"]["id"]
+
+    res = await client.get("/api/v1/recipes/catalogue/cat-bihari-paratha", headers=headers)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["recipe_id"] == "cat-bihari-paratha"
+    assert body["title"] == "Spiced Chana-Stuffed Paratha"
+    assert len(body["instructions"]) >= 2
+    assert all("confirm actual quantities" not in s.lower() for s in body["instructions"])
+
+    missing = await client.get("/api/v1/recipes/catalogue/nonexistent-id", headers=headers)
+    assert missing.status_code == 404

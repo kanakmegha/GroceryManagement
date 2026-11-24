@@ -1,8 +1,10 @@
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import APIRouter, Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,9 +46,21 @@ def create_app(
             refresh_cooldown_seconds=settings.JWKS_REFRESH_COOLDOWN_SECONDS,
             http_client=jwks_http_client,
         )
+        scheduler = None
+        if settings.DAILY_MEAL_SCHEDULER_ENABLED and not os.environ.get("PYTEST_CURRENT_TEST"):
+            from app.modules.discovery.daily_scheduler import DailyMealPlanScheduler
+
+            scheduler = DailyMealPlanScheduler(
+                app.state.session_maker,
+                poll_interval_seconds=settings.DAILY_MEAL_SCHEDULER_POLL_SECONDS,
+                stale_threshold_seconds=settings.DAILY_MEAL_STALE_GENERATING_SECONDS,
+            )
+            scheduler.start()
         try:
             yield
         finally:
+            if scheduler is not None:
+                await scheduler.stop()
             await engine.dispose()
 
     app = FastAPI(
@@ -56,6 +70,13 @@ def create_app(
     )
 
     app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ALLOWED_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     register_exception_handlers(app)
 
     @app.get("/health", tags=["health"])

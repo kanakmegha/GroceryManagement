@@ -11,6 +11,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.cooking.models import MealHistory
 
+PERSONALISATION_RECIPE_THRESHOLD = 10
+
+
+def _recipe_identity_key(recipe_id: str | None, recipe_title: str) -> str:
+    rid = (recipe_id or "").strip().lower()
+    if rid:
+        return f"id:{rid}"
+    return f"title:{' '.join(recipe_title.strip().lower().split())}"
+
+
+async def count_distinct_completed_recipes(db: AsyncSession, household_id: UUID) -> int:
+    """Count distinct recipes completed through cooking workflow (never views/generations)."""
+    rows = (
+        await db.execute(
+            select(MealHistory.recipe_id, MealHistory.recipe_title).where(
+                MealHistory.household_id == household_id
+            )
+        )
+    ).all()
+    keys = {
+        _recipe_identity_key(rid, title)
+        for rid, title in rows
+        if (rid and rid.strip()) or (title and title.strip())
+    }
+    return len(keys)
+
 
 async def compute_household_preference_profile(
     db: AsyncSession, household_id: UUID
@@ -38,11 +64,14 @@ async def compute_household_preference_profile(
     if not rows:
         return {
             "total_completed_meals": 0,
+            "distinct_completed_recipes": 0,
             "frequently_cooked": [],
             "favourite_dishes": [],
             "disliked_dishes": [],
             "want_to_cook_again": [],
             "preferred_cuisines": [],
+            "explored_cuisines": [],
+            "cooked_dishes_history": [],
             "preferred_meal_types": [],
             "favourite_ingredients": [],
             "disliked_ingredients": [],
@@ -65,8 +94,17 @@ async def compute_household_preference_profile(
     disliked_dishes: list[str] = []
     positive_cook_times: list[int] = []
 
+    distinct_keys: set[str] = set()
+    explored_cuisines_set: list[str] = []
+    cooked_titles_set: list[str] = []
+
     for r in rows:
         title = r.recipe_title.strip()
+        distinct_keys.add(_recipe_identity_key(r.recipe_id, title))
+        if title and title not in cooked_titles_set:
+            cooked_titles_set.append(title)
+        if r.cuisine and r.cuisine.strip() and r.cuisine.strip() not in explored_cuisines_set:
+            explored_cuisines_set.append(r.cuisine.strip())
         dish_counts[title] += 1
         if r.rating is not None:
             dish_ratings[title].append(int(r.rating))
@@ -173,11 +211,14 @@ async def compute_household_preference_profile(
 
     return {
         "total_completed_meals": len(rows),
+        "distinct_completed_recipes": len(distinct_keys),
         "frequently_cooked": frequently_cooked,
         "favourite_dishes": favourite_dishes[:10],
         "disliked_dishes": disliked_dishes[:10],
         "want_to_cook_again": want_again[:10],
         "preferred_cuisines": preferred_cuisines,
+        "explored_cuisines": explored_cuisines_set[:15],
+        "cooked_dishes_history": cooked_titles_set[:30],
         "preferred_meal_types": preferred_meal_types,
         "favourite_ingredients": favourite_ingredients,
         "disliked_ingredients": disliked_ingredients,

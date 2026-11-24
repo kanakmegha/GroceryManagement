@@ -1,4 +1,5 @@
 from collections.abc import AsyncGenerator
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import Request
 from sqlalchemy import event
@@ -15,10 +16,50 @@ class Base(DeclarativeBase):
     pass
 
 
+def normalize_database_url(database_url: str) -> str:
+    """Normalize PostgreSQL/Neon URLs for SQLAlchemy asyncpg while preserving SQLite URLs."""
+    raw = database_url.strip()
+    if not raw or raw.startswith("sqlite"):
+        return raw
+
+    parts = urlsplit(raw)
+    scheme = parts.scheme.lower()
+    if scheme in {"postgres", "postgresql"}:
+        scheme = "postgresql+asyncpg"
+    elif scheme != "postgresql+asyncpg":
+        return raw
+
+    query_pairs = parse_qsl(parts.query, keep_blank_values=True)
+    has_ssl = any(k.lower() == "ssl" for k, _ in query_pairs)
+    normalized_pairs: list[tuple[str, str]] = []
+    for key, val in query_pairs:
+        low = key.lower()
+        if low == "sslmode":
+            if not has_ssl and val:
+                normalized_pairs.append(("ssl", val))
+                has_ssl = True
+            continue
+        if low == "channel_binding":
+            # asyncpg does not accept channel_binding in connect kwargs
+            continue
+        normalized_pairs.append((key, val))
+
+    return urlunsplit(
+        (
+            scheme,
+            parts.netloc,
+            parts.path,
+            urlencode(normalized_pairs),
+            parts.fragment,
+        )
+    )
+
+
 def build_async_engine(database_url: str) -> AsyncEngine:
-    if database_url.startswith("sqlite"):
+    normalized_url = normalize_database_url(database_url)
+    if normalized_url.startswith("sqlite"):
         engine = create_async_engine(
-            database_url,
+            normalized_url,
             connect_args={"check_same_thread": False},
             pool_pre_ping=True,
         )
@@ -32,8 +73,10 @@ def build_async_engine(database_url: str) -> AsyncEngine:
         return engine
 
     return create_async_engine(
-        database_url,
+        normalized_url,
         connect_args={"statement_cache_size": 0},
+        pool_size=3,
+        max_overflow=2,
         pool_pre_ping=True,
         pool_recycle=300,
     )

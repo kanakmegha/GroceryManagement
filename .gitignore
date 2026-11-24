@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+!.env.docker.example
+!.env.compose.example
 
 # Certificates and credentials
 *.pem
@@ -23,6 +25,7 @@ secrets/
 *.sql.bak
 *.sql.gz
 backend/backups/
+backend/data/
 database/backups/
 backups/
 
@@ -63,3 +66,4 @@ receipt_ocr_benchmark/datasets/
 receipt_ocr_benchmark/outputs/
 receipt_ocr_benchmark/reports/
 receipt_ocr_benchmark/scripts/
+.neon

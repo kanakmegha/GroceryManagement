@@ -13,12 +13,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+RUN uv sync --no-dev
 
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./
 
+RUN mkdir -p /app/data
+
 EXPOSE 8001
 
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD /app/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8001} --workers 1

@@ -16,7 +16,7 @@ from app.modules.cooking.schemas import (
     MealHistoryListResponse,
     MealHistoryOut,
 )
-from app.modules.inventory.service import allocate_fefo
+from app.modules.inventory.service import BatchFEFORequest, batch_allocate_fefo
 
 
 def _utcnow() -> datetime:
@@ -172,6 +172,8 @@ async def complete_cooking_plan(
     stmt = select(CookingPlan).where(
         CookingPlan.id == plan_id, CookingPlan.household_id == household_id
     )
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        stmt = stmt.with_for_update()
     plan = (await db.execute(stmt)).scalar_one_or_none()
     if plan is None:
         raise AppError(status_code=404, code="NOT_FOUND", message="Cooking plan not found.")
@@ -185,6 +187,7 @@ async def complete_cooking_plan(
     overrides_by_line: dict[str, Decimal] = {}
     waste_by_line: dict[str, Decimal] = {}
     omitted_by_line: set[str] = set()
+    session_confirmed_by_line: dict[str, tuple[Decimal | None, str | None]] = {}
     overrides_by_cid: dict[str, Decimal] = {}
     waste_by_cid: dict[str, Decimal] = {}
     omitted_by_cid: set[str] = set()
@@ -194,6 +197,11 @@ async def complete_cooking_plan(
             if item.line_id:
                 if item.omitted:
                     omitted_by_line.add(item.line_id)
+                if item.session_confirmed:
+                    session_confirmed_by_line[item.line_id] = (
+                        item.confirmed_qty,
+                        item.confirmed_unit,
+                    )
                 if val is not None:
                     overrides_by_line[item.line_id] = val
                 if item.waste_qty is not None:
@@ -209,14 +217,17 @@ async def complete_cooking_plan(
 
     updated_ingredients: list[dict] = []
     all_deductions: list[dict] = []
+    batch_requests: list[BatchFEFORequest] = []
 
     for idx, ing in enumerate(plan.ingredients):
         line_id = str(ing.get("line_id") or f"{plan.id}:{ing['canonical_item_id']}:{idx}")
         cid_str = str(ing["canonical_item_id"])
         cid = UUID(cid_str)
         planned_qty = Decimal(str(ing["planned_qty"]))
+        line_unit = str(ing.get("base_unit") or "").strip() or None
 
-        is_omitted = line_id in omitted_by_line or (
+        is_session_confirmed = line_id in session_confirmed_by_line
+        is_omitted = is_session_confirmed or line_id in omitted_by_line or (
             line_id not in overrides_by_line and cid_str in omitted_by_cid
         )
         if is_omitted:
@@ -227,17 +238,53 @@ async def complete_cooking_plan(
             waste_qty = waste_by_line.get(line_id, waste_by_cid.get(cid_str, Decimal("0")))
 
         if actual_qty > Decimal("0"):
-            deductions = await allocate_fefo(
-                db,
-                household_id=household_id,
-                canonical_item_id=cid,
-                required_qty=actual_qty,
-                actor_user_id=user_id,
-                event_type="COOK_OUT",
-                reference_type="cooking_plan",
-                reference_id=plan.id,
-                notes=f"Cooked {plan.recipe_title}",
+            batch_requests.append(
+                BatchFEFORequest(
+                    canonical_item_id=cid,
+                    required_qty=actual_qty,
+                    base_unit=line_unit,
+                    event_type="COOK_OUT",
+                    notes=f"Cooked {plan.recipe_title}",
+                )
             )
+        if waste_qty > Decimal("0"):
+            batch_requests.append(
+                BatchFEFORequest(
+                    canonical_item_id=cid,
+                    required_qty=waste_qty,
+                    base_unit=line_unit,
+                    event_type="WASTE_OUT",
+                    notes=f"Waste while cooking {plan.recipe_title}",
+                )
+            )
+
+        updated_entry: dict[str, Any] = {
+            **ing,
+            "line_id": line_id,
+            "actual_qty": str(actual_qty),
+            "waste_qty": str(waste_qty),
+            "total_deducted_qty": str(actual_qty + waste_qty),
+            "omitted": is_omitted,
+        }
+        if is_session_confirmed:
+            conf_qty, conf_unit = session_confirmed_by_line[line_id]
+            updated_entry["session_confirmed"] = True
+            if conf_qty is not None:
+                updated_entry["confirmed_qty"] = str(conf_qty)
+            if conf_unit:
+                updated_entry["confirmed_unit"] = conf_unit
+        updated_ingredients.append(updated_entry)
+
+    if batch_requests:
+        batch_results = await batch_allocate_fefo(
+            db,
+            household_id=household_id,
+            requests=batch_requests,
+            actor_user_id=user_id,
+            reference_type="cooking_plan",
+            reference_id=plan.id,
+        )
+        for req, deductions in batch_results:
             for d in deductions:
                 all_deductions.append(
                     {
@@ -246,44 +293,9 @@ async def complete_cooking_plan(
                         "deducted_qty": str(d.deducted_qty),
                         "base_unit": d.base_unit,
                         "ledger_entry_id": str(d.ledger_entry_id),
-                        "event_type": "COOK_OUT",
+                        "event_type": req.event_type,
                     }
                 )
-
-        if waste_qty > Decimal("0"):
-            waste_deductions = await allocate_fefo(
-                db,
-                household_id=household_id,
-                canonical_item_id=cid,
-                required_qty=waste_qty,
-                actor_user_id=user_id,
-                event_type="WASTE_OUT",
-                reference_type="cooking_plan",
-                reference_id=plan.id,
-                notes=f"Waste while cooking {plan.recipe_title}",
-            )
-            for d in waste_deductions:
-                all_deductions.append(
-                    {
-                        "canonical_item_id": str(d.canonical_item_id),
-                        "lot_id": str(d.lot_id),
-                        "deducted_qty": str(d.deducted_qty),
-                        "base_unit": d.base_unit,
-                        "ledger_entry_id": str(d.ledger_entry_id),
-                        "event_type": "WASTE_OUT",
-                    }
-                )
-
-        updated_ingredients.append(
-            {
-                **ing,
-                "line_id": line_id,
-                "actual_qty": str(actual_qty),
-                "waste_qty": str(waste_qty),
-                "total_deducted_qty": str(actual_qty + waste_qty),
-                "omitted": is_omitted,
-            }
-        )
 
     completed_at = _utcnow()
     plan.ingredients = updated_ingredients
@@ -353,6 +365,8 @@ async def cancel_cooking_plan(
     stmt = select(CookingPlan).where(
         CookingPlan.id == plan_id, CookingPlan.household_id == household_id
     )
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        stmt = stmt.with_for_update()
     plan = (await db.execute(stmt)).scalar_one_or_none()
     if plan is None:
         raise AppError(status_code=404, code="NOT_FOUND", message="Cooking plan not found.")

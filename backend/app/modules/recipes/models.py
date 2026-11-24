@@ -30,6 +30,12 @@ class HouseholdRecipePreference(Base):
     preferred_cuisines: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     preferred_meal_types: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     max_prep_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recommendation_mode: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="balanced"
+    )
+    personalisation_prompt_dismissed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
     )

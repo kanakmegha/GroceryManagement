@@ -1,7 +1,10 @@
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+
+RecommendationMode = Literal["enjoyed", "new", "balanced"]
 
 
 class RecipeIngredientOut(BaseModel):
@@ -30,10 +33,14 @@ class RecipeStepOut(BaseModel):
     title: str
     instruction: str
     ingredients_used: list[str] = Field(default_factory=list)
+    ingredient_quantities: dict[str, str] = Field(default_factory=dict)
     duration_minutes: int | None = None
     heat_level: str | None = None
     technique: str | None = None
+    equipment: list[str] = Field(default_factory=list)
     completion_cue: str = ""
+    caution: str | None = None
+    next_action: str | None = None
 
 
 class RecipeRecommendationOut(BaseModel):
@@ -58,10 +65,14 @@ class RecipeRecommendationOut(BaseModel):
     insufficient_ingredients: list[str] = Field(default_factory=list)
     ingredients: list[RecipeIngredientOut] = Field(default_factory=list)
     instructions: list[str] = Field(default_factory=list)
+    preparation_steps: list[str] = Field(default_factory=list)
     structured_steps: list[RecipeStepOut] = Field(default_factory=list)
+    equipment_required: list[str] = Field(default_factory=list)
     quality_warnings: list[str] = Field(default_factory=list)
     substitutions: list[str] = Field(default_factory=list)
     cooking_tips: list[str] = Field(default_factory=list)
+    troubleshooting_tips: list[str] = Field(default_factory=list)
+    serving_result: str | None = None
     food_safety_notes: list[str] = Field(default_factory=list)
     references: list[RecipeReferenceOut] = Field(default_factory=list)
 
@@ -88,10 +99,21 @@ class HouseholdRecipePreferencesIn(BaseModel):
     preferred_cuisines: list[str] = Field(default_factory=list)
     preferred_meal_types: list[str] = Field(default_factory=list)
     max_prep_minutes: int | None = Field(default=None, ge=5, le=240)
+    recommendation_mode: RecommendationMode | None = None
+    dismiss_personalisation_prompt: bool | None = None
 
 
 class HouseholdRecipePreferencesOut(HouseholdRecipePreferencesIn):
     household_id: UUID
+    recommendation_mode: RecommendationMode = "balanced"
+    distinct_completed_recipes: int = 0
+    should_show_personalisation_prompt: bool = False
+    personalisation_prompt_dismissed: bool = False
+
+
+class RecommendationModeUpdateRequest(BaseModel):
+    recommendation_mode: RecommendationMode | None = None
+    dismiss_personalisation_prompt: bool | None = None
 
 
 class RecipeFeedbackIn(BaseModel):
@@ -124,6 +146,7 @@ class RecipeChatRequest(BaseModel):
     hunger_level: str | None = Field(default=None, max_length=32)
     preference_tags: list[str] = Field(default_factory=list)
     equipment: list[str] = Field(default_factory=list)
+    recommendation_mode: RecommendationMode | None = None
     conversation_history: list[RecipeChatTurnInput] = Field(default_factory=list)
 
 
@@ -167,8 +190,12 @@ class RecipeChatSuggestionOut(BaseModel):
     optional_ingredients: list[RecipeChatIngredientOut] = Field(default_factory=list)
     substitutions: list[str] = Field(default_factory=list)
     cooking_tips: list[str] = Field(default_factory=list)
+    troubleshooting_tips: list[str] = Field(default_factory=list)
+    serving_result: str | None = None
     food_safety_notes: list[str] = Field(default_factory=list)
     uses_expiring_items: list[str] = Field(default_factory=list)
+    equipment_required: list[str] = Field(default_factory=list)
+    preparation_steps: list[str] = Field(default_factory=list)
     instructions: list[str] = Field(default_factory=list)
     structured_steps: list[RecipeStepOut] = Field(default_factory=list)
     quality_warnings: list[str] = Field(default_factory=list)

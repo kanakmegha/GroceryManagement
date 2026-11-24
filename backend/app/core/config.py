@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Annotated
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     CLERK_JWKS_URL: str = ""
     CLERK_AUTHORIZED_PARTIES: Annotated[list[str], NoDecode] = []
     CLERK_SECRET_KEY: str | None = None
+    CORS_ALLOWED_ORIGINS: Annotated[list[str], NoDecode] = [
+        "http://localhost:8081",
+        "http://localhost:19006",
+        "http://localhost:3000",
+    ]
 
     JWKS_CACHE_TTL_SECONDS: int = 3600
     JWKS_REFRESH_COOLDOWN_SECONDS: int = 30
@@ -32,6 +37,9 @@ class Settings(BaseSettings):
     HF_TOKEN: str = ""
     HF_MODEL_ID: str = "Qwen/Qwen2.5-72B-Instruct"
     HF_TIMEOUT_SECONDS: float = 20.0
+    DAILY_MEAL_SCHEDULER_ENABLED: bool = True
+    DAILY_MEAL_SCHEDULER_POLL_SECONDS: int = 60
+    DAILY_MEAL_STALE_GENERATING_SECONDS: int = 600
 
     # Isolated Experimental V10.6 OCR Service (disabled by default; never replaces production OCR)
     EXPERIMENTAL_OCR_ENABLED: bool = False
@@ -43,7 +51,7 @@ class Settings(BaseSettings):
     EXPERIMENTAL_OCR_API_KEY: str = ""
     EXPERIMENTAL_OCR_TIMEOUT_SECONDS: float = 90.0
 
-    @field_validator("CLERK_AUTHORIZED_PARTIES", mode="before")
+    @field_validator("CLERK_AUTHORIZED_PARTIES", "CORS_ALLOWED_ORIGINS", mode="before")
     @classmethod
     def _parse_authorized_parties(cls, value: object) -> list[str]:
         if value is None or value == "":
@@ -53,6 +61,23 @@ class Settings(BaseSettings):
         if isinstance(value, list):
             return [str(item).strip() for item in value if str(item).strip()]
         raise ValueError("CLERK_AUTHORIZED_PARTIES must be a list or comma-separated string")
+
+    @model_validator(mode="after")
+    def _validate_production_database(self) -> "Settings":
+        """Refuse to run in production with a missing or SQLite DATABASE_URL.
+
+        SQLite is fine for local development and Docker Compose, but must never be
+        used in production (Render), where data would be lost on every restart.
+        """
+        if self.ENVIRONMENT == "production":
+            url = (self.DATABASE_URL or "").strip()
+            if not url or url.startswith("sqlite"):
+                raise ValueError(
+                    "DATABASE_URL must be set to a non-SQLite URL (e.g. pooled Neon "
+                    "PostgreSQL) when ENVIRONMENT=production. SQLite is not supported "
+                    "in production."
+                )
+        return self
 
     @property
     def effective_jwks_url(self) -> str:

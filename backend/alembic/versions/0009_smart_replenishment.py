@@ -75,7 +75,7 @@ def upgrade() -> None:
         sa.Column("canonical_item_id", sa.Uuid(), nullable=False),
         sa.Column("action", sa.String(length=32), nullable=False),
         sa.Column("remind_after", sa.Date(), nullable=True),
-        sa.Column("is_active", sa.Boolean(), server_default=sa.text("1"), nullable=False),
+        sa.Column("is_active", sa.Boolean(), server_default=sa.text("true"), nullable=False),
         sa.Column("reason_snapshot", sa.Text(), nullable=True),
         sa.Column("actor_user_id", sa.Uuid(), nullable=True),
         sa.Column(
