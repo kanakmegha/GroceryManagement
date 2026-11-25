@@ -1,6 +1,8 @@
 export interface PublicEnvConfig {
   apiUrl: string;
   clerkPublishableKey: string;
+  /** Opt-in public demo entry (web only). Off unless EXPO_PUBLIC_DEMO_MODE === 'true'. */
+  demoModeEnabled: boolean;
 }
 
 function normalizeBaseUrl(rawUrl: string | undefined): string {
@@ -16,5 +18,6 @@ export function getPublicEnvConfig(): PublicEnvConfig {
   return {
     apiUrl: normalizeBaseUrl(process.env.EXPO_PUBLIC_API_URL),
     clerkPublishableKey: (process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? '').trim(),
+    demoModeEnabled: (process.env.EXPO_PUBLIC_DEMO_MODE ?? '').trim().toLowerCase() === 'true',
   };
 }

@@ -1,8 +1,16 @@
 import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { Slot, type ErrorBoundaryProps } from 'expo-router';
-import { ClerkLoaded, ClerkLoading, ClerkProvider, SignedIn, SignedOut } from '@clerk/clerk-expo';
-import { tokenCache } from '@clerk/clerk-expo/token-cache';
+import { Platform, View } from 'react-native';
+import { Redirect, Slot, usePathname, type ErrorBoundaryProps } from 'expo-router';
+import { DemoEntryLink } from '../src/features/demo/DemoEntryLink';
+import {
+  DEMO_HOME_HREF,
+  hasAuthIntent,
+  isDemoPath,
+  shouldRedirectToDemo,
+} from '../src/features/demo/demoMode';
+import { ClerkLoaded, ClerkLoading, ClerkProvider, Show } from '@clerk/expo';
+import { tokenCache } from '@clerk/expo/token-cache';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { HouseholdBootstrapGate } from '../src/features/auth/HouseholdContext';
@@ -38,7 +46,26 @@ export default function RootLayout() {
       })
   );
 
-  const { clerkPublishableKey } = getPublicEnvConfig();
+  const { clerkPublishableKey, demoModeEnabled } = getPublicEnvConfig();
+  const pathname = usePathname();
+
+  // Explicit application modes. Demo Mode never mounts Clerk or the authenticated QueryClient,
+  // so anonymous browsing has no auth prerequisite and no cache shared with real households.
+  if (demoModeEnabled && isDemoPath(pathname)) {
+    return (
+      <SafeAreaProvider>
+        <StatusBar style="dark" />
+        <Slot />
+      </SafeAreaProvider>
+    );
+  }
+  if (
+    demoModeEnabled &&
+    Platform.OS === 'web' &&
+    shouldRedirectToDemo({ demoAvailable: true, pathname, authIntent: hasAuthIntent() })
+  ) {
+    return <Redirect href={DEMO_HOME_HREF as never} />;
+  }
 
   if (!clerkPublishableKey || clerkPublishableKey.includes('...')) {
     return (
@@ -65,14 +92,19 @@ export default function RootLayout() {
             </ScreenContainer>
           </ClerkLoading>
           <ClerkLoaded>
-            <SignedIn>
+            <Show when="signed-in">
               <HouseholdBootstrapGate>
                 <Slot />
               </HouseholdBootstrapGate>
-            </SignedIn>
-            <SignedOut>
-              <SignInScreen />
-            </SignedOut>
+            </Show>
+            <Show when="signed-out">
+              <View style={{ flex: 1 }}>
+                <View style={{ flex: 1 }}>
+                  <SignInScreen />
+                </View>
+                {demoModeEnabled ? <DemoEntryLink /> : null}
+              </View>
+            </Show>
           </ClerkLoaded>
         </ClerkProvider>
       </QueryClientProvider>
