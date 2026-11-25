@@ -67,3 +67,4 @@ receipt_ocr_benchmark/outputs/
 receipt_ocr_benchmark/reports/
 receipt_ocr_benchmark/scripts/
 .neon
+compose.local.yaml

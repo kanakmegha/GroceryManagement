@@ -34,6 +34,7 @@ class DailyMealPlan(Base):
     __table_args__ = (
         UniqueConstraint("household_id", "local_date", name="uq_daily_meal_plans_household_date"),
         Index("ix_daily_meal_plans_status_date", "status", "local_date"),
+        Index("ix_daily_meal_plans_active_generation_id", "active_generation_id"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
@@ -60,6 +61,15 @@ class DailyMealPlan(Base):
         DateTime(timezone=True), nullable=True
     )
     generation_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    active_generation_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), nullable=True
+    )
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)

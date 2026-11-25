@@ -1,0 +1,47 @@
+services:
+  - type: web
+    name: grocery-management-backend
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /health
+    preDeployCommand: /app/.venv/bin/alembic upgrade head
+    dockerCommand: /app/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      # Neon PostgreSQL: pooled URL for runtime, direct (unpooled) URL for Alembic migrations
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_MIGRATION_URL
+        sync: false
+      # Clerk production authentication (set exact values in Render Dashboard)
+      - key: CLERK_ISSUER
+        sync: false
+      - key: CLERK_JWKS_URL
+        sync: false
+      - key: CLERK_AUTHORIZED_PARTIES
+        sync: false
+      # Exact Netlify frontend origin(s), comma-separated (no wildcard, no localhost)
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      # Hugging Face token for authenticated AI features (never called by demo routes)
+      - key: HF_TOKEN
+        sync: false
+      # Public Demo Mode — kept disabled until Neon demo dataset is seeded & verified
+      - key: PUBLIC_DEMO_ENABLED
+        value: "false"
+      - key: DEMO_HOUSEHOLD_ID
+        value: cbd51752-9d97-5589-b6c0-157b61d69720
+      - key: DEMO_RATE_LIMIT_REQUESTS
+        value: "120"
+      - key: DEMO_RATE_LIMIT_WINDOW_SECONDS
+        value: "60"
+      - key: DEMO_CACHE_MAX_AGE_SECONDS
+        value: "60"
+      # Daily meal plan scheduler (safe with --workers 1)
+      - key: DAILY_MEAL_SCHEDULER_ENABLED
+        value: "true"

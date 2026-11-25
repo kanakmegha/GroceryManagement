@@ -16,6 +16,7 @@ from app.core.security import JWKSCache
 from app.modules.auth.router import router as auth_router
 from app.modules.cooking.meals_router import router as meals_router
 from app.modules.cooking.router import router as cooking_router
+from app.modules.demo.router import router as demo_router
 from app.modules.discovery.router import router as discover_router
 from app.modules.experimental_ocr.router import router as experimental_ocr_router
 from app.modules.households.router import router as households_router
@@ -54,6 +55,8 @@ def create_app(
                 app.state.session_maker,
                 poll_interval_seconds=settings.DAILY_MEAL_SCHEDULER_POLL_SECONDS,
                 stale_threshold_seconds=settings.DAILY_MEAL_STALE_GENERATING_SECONDS,
+                lease_seconds=settings.DAILY_MEAL_LEASE_SECONDS,
+                heartbeat_seconds=settings.DAILY_MEAL_HEARTBEAT_SECONDS,
             )
             scheduler.start()
         try:
@@ -63,10 +66,14 @@ def create_app(
                 await scheduler.stop()
             await engine.dispose()
 
+    is_production = settings.ENVIRONMENT == "production"
     app = FastAPI(
         title=settings.APP_NAME,
         version="0.1.0",
         lifespan=lifespan,
+        docs_url=None if is_production else "/docs",
+        redoc_url=None if is_production else "/redoc",
+        openapi_url=None if is_production else "/openapi.json",
     )
 
     app.add_middleware(RequestIdMiddleware)
@@ -103,6 +110,7 @@ def create_app(
     api_v1.include_router(replenishment_router)
     api_v1.include_router(shopping_list_router)
     api_v1.include_router(discover_router)
+    api_v1.include_router(demo_router)
     app.include_router(api_v1)
     app.include_router(experimental_ocr_router)
 

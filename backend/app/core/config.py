@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     DAILY_MEAL_SCHEDULER_ENABLED: bool = True
     DAILY_MEAL_SCHEDULER_POLL_SECONDS: int = 60
     DAILY_MEAL_STALE_GENERATING_SECONDS: int = 600
+    DAILY_MEAL_LEASE_SECONDS: int = 120
+    DAILY_MEAL_HEARTBEAT_SECONDS: int = 30
+
+    # Public read-only product demo mode (disabled by default; never weakens Clerk auth)
+    PUBLIC_DEMO_ENABLED: bool = False
+    DEMO_HOUSEHOLD_ID: str = ""
+    DEMO_RATE_LIMIT_REQUESTS: int = 120
+    DEMO_RATE_LIMIT_WINDOW_SECONDS: int = 60
+    DEMO_CACHE_MAX_AGE_SECONDS: int = 60
 
     # Isolated Experimental V10.6 OCR Service (disabled by default; never replaces production OCR)
     EXPERIMENTAL_OCR_ENABLED: bool = False
