@@ -12,10 +12,12 @@ import {
 } from 'react-native';
 import {
   isClerkAPIResponseError,
+  useSSO,
+} from '@clerk/expo';
+import {
   useSignIn,
   useSignUp,
-  useSSO,
-} from '@clerk/clerk-expo';
+} from '@clerk/expo/legacy';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';

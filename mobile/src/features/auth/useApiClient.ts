@@ -1,5 +1,5 @@
 import { useMemo, useRef } from 'react';
-import { useAuth } from '@clerk/clerk-expo';
+import { useAuth } from '@clerk/expo';
 import { ApiClient, createApiClient } from '../../shared/api/client';
 import { getPublicEnvConfig } from '../../shared/config/env';
 import { useHousehold } from './HouseholdContext';

@@ -8,6 +8,7 @@ export interface ErrorStateProps {
   message: string;
   onRetry?: () => void;
   retryLabel?: string;
+  retryDisabled?: boolean;
   secondaryActionLabel?: string;
   onSecondaryAction?: () => void;
 }
@@ -17,6 +18,7 @@ export function ErrorState({
   message,
   onRetry,
   retryLabel = 'Try Again',
+  retryDisabled = false,
   secondaryActionLabel,
   onSecondaryAction,
 }: ErrorStateProps) {
@@ -32,11 +34,14 @@ export function ErrorState({
           {onRetry ? (
             <Pressable
               onPress={onRetry}
+              disabled={retryDisabled}
               style={({ pressed }) => [
                 styles.primaryButton,
-                pressed && styles.primaryButtonPressed,
+                pressed && !retryDisabled && styles.primaryButtonPressed,
+                retryDisabled && { opacity: 0.55 },
               ]}
               accessibilityRole="button"
+              accessibilityState={{ disabled: retryDisabled }}
               accessibilityLabel={retryLabel}
             >
               <Text style={styles.primaryButtonText}>{retryLabel}</Text>

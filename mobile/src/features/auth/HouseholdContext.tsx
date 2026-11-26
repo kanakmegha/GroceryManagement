@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { useAuth } from '@clerk/clerk-expo';
+import { useAuth } from '@clerk/expo';
 import { ApiClientError, createApiClient } from '../../shared/api/client';
 import { AuthMeResponse, AuthUser, Household } from '../../shared/api/types';
 import { ErrorState, LoadingState, ScreenContainer } from '../../shared/components';
