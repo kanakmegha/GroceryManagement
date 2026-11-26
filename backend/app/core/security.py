@@ -198,8 +198,10 @@ async def verify_clerk_token(
         )
 
     azp = payload.get("azp")
-    if settings.CLERK_AUTHORIZED_PARTIES and (
-        not isinstance(azp, str) or azp not in settings.CLERK_AUTHORIZED_PARTIES
+    if (
+        settings.CLERK_AUTHORIZED_PARTIES
+        and azp is not None
+        and (not isinstance(azp, str) or azp not in settings.CLERK_AUTHORIZED_PARTIES)
     ):
         raise AppError(
             status_code=401,

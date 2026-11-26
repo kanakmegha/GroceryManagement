@@ -203,3 +203,67 @@ async def test_kid_key_rotation_refreshes_jwks_and_respects_cooldown(
         assert provider.fetch_count == 2
 
     await jwks_http_client.aclose()
+
+
+async def test_accepts_native_token_without_azp_and_rejects_malformed_azp(
+    client: httpx.AsyncClient,
+    jwks_provider: EphemeralJWKSProvider,
+) -> None:
+    # Native Expo Go / Android APK tokens omit the browser 'azp' claim
+    native_token = jwks_provider.make_token(
+        sub="user_clerk_native_001",
+        azp=None,
+        email="native@example.com",
+        name="Native User",
+    )
+    ok_resp = await client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {native_token}"},
+    )
+    assert ok_resp.status_code == 200
+    assert ok_resp.json()["user"]["clerk_user_id"] == "user_clerk_native_001"
+
+    # Malformed non-string 'azp' must still be rejected
+    malformed_azp = jwks_provider.make_token(
+        sub="user_clerk_native_002",
+        azp=None,
+        extra_claims={"azp": 12345},
+    )
+    bad_resp = await client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {malformed_azp}"},
+    )
+    assert_error_envelope(bad_resp, 401, "UNAUTHORIZED")
+
+
+async def test_empty_authorized_parties_allows_valid_signed_token(
+    temp_db_url: str,
+) -> None:
+    provider = EphemeralJWKSProvider()
+    settings = Settings(
+        DATABASE_URL=temp_db_url,
+        CLERK_ISSUER=provider.issuer,
+        CLERK_JWKS_URL=provider.jwks_url,
+        CLERK_AUTHORIZED_PARTIES=[],
+        JWKS_CACHE_TTL_SECONDS=3600,
+        JWKS_REFRESH_COOLDOWN_SECONDS=30,
+        JWT_LEEWAY_SECONDS=10,
+    )
+    jwks_http = httpx.AsyncClient(transport=provider.transport())
+    app = create_app(settings_override=settings, jwks_http_client=jwks_http)
+    try:
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://testserver",
+            ) as ac,
+        ):
+            tok = provider.make_token(
+                sub="user_clerk_empty_azp_cfg",
+                azp="https://any-origin.example.test",
+            )
+            res = await ac.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {tok}"})
+            assert res.status_code == 200
+    finally:
+        await jwks_http.aclose()
