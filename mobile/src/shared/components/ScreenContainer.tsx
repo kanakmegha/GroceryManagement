@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, StyleSheet, View, ViewStyle } from 'react-native';
+import { Platform, ScrollView, StyleSheet, View, ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing } from '../theme/tokens';
 
@@ -49,10 +49,24 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.lg,
+    ...(Platform.OS === 'web'
+      ? {
+          width: '100%',
+          maxWidth: 1120,
+          alignSelf: 'center',
+        }
+      : {}),
   },
   container: {
     flex: 1,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.lg,
+    ...(Platform.OS === 'web'
+      ? {
+          width: '100%',
+          maxWidth: 1120,
+          alignSelf: 'center',
+        }
+      : {}),
   },
 });

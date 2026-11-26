@@ -467,10 +467,14 @@ export interface RecipeStep {
   title: string;
   instruction: string;
   ingredients_used?: string[];
+  ingredient_quantities?: Record<string, string>;
   duration_minutes?: number | null;
   heat_level?: string | null;
   technique?: string | null;
+  equipment?: string[];
   completion_cue?: string;
+  caution?: string | null;
+  next_action?: string | null;
 }
 
 export interface RecipeRecommendation {
@@ -494,10 +498,14 @@ export interface RecipeRecommendation {
   insufficient_ingredients?: string[];
   ingredients?: RecipeIngredient[];
   instructions?: string[];
+  preparation_steps?: string[];
   structured_steps?: RecipeStep[];
+  equipment_required?: string[];
   quality_warnings?: string[];
   substitutions?: string[];
   cooking_tips?: string[];
+  troubleshooting_tips?: string[];
+  serving_result?: string | null;
   food_safety_notes?: string[];
   references?: RecipeReference[];
 }
@@ -514,6 +522,8 @@ export interface RecipeRecommendationsResponse {
   weather_summary?: string | null;
 }
 
+export type RecommendationMode = 'enjoyed' | 'new' | 'balanced';
+
 export interface HouseholdRecipePreferences {
   household_id?: string;
   timezone: string;
@@ -523,6 +533,12 @@ export interface HouseholdRecipePreferences {
   preferred_cuisines: string[];
   preferred_meal_types: string[];
   max_prep_minutes?: number | null;
+  recommendation_mode?: RecommendationMode;
+  distinct_completed_recipes?: number;
+  should_show_personalisation_prompt?: boolean;
+  personalisation_prompt_dismissed?: boolean;
+  onboarding_completed?: boolean;
+  preferences_completed_at?: string | null;
 }
 
 export interface RecipeChatExternalLink {
@@ -562,8 +578,12 @@ export interface RecipeChatSuggestion {
   optional_ingredients?: RecipeChatIngredient[];
   substitutions?: string[];
   cooking_tips?: string[];
+  troubleshooting_tips?: string[];
+  serving_result?: string | null;
   food_safety_notes?: string[];
   uses_expiring_items?: string[];
+  equipment_required?: string[];
+  preparation_steps?: string[];
   instructions?: string[];
   structured_steps?: RecipeStep[];
   quality_warnings?: string[];
@@ -592,6 +612,7 @@ export interface RecipeChatRequest {
   hunger_level?: string | null;
   preference_tags?: string[];
   equipment?: string[];
+  recommendation_mode?: RecommendationMode;
   conversation_history?: RecipeChatTurnInput[];
 }
 
@@ -657,6 +678,9 @@ export interface CompleteCookingPlanItemInput {
   actual_used_qty: string;
   waste_qty?: string;
   omitted?: boolean;
+  session_confirmed?: boolean;
+  confirmed_qty?: string;
+  confirmed_unit?: string;
 }
 
 export interface CompleteCookingPlanRequest {
@@ -1017,4 +1041,145 @@ export interface ShoppingListResponse {
   pending: ShoppingListItem[];
   purchased: ShoppingListItem[];
   dismissed: ShoppingListItem[];
+}
+
+
+export type DiscoveryRequirementMode =
+  | 'exact_variant'
+  | 'compatible_family'
+  | 'generic_ingredient';
+
+export type DiscoveryRequirementType = 'required' | 'optional';
+
+export type DiscoveryMatchStatus = 'available' | 'partial' | 'missing';
+
+export type DiscoveryMatchMethod = 'primary' | 'verified_substitution';
+
+export type DiscoveryMatchReason =
+  | 'MISSING_IN_PANTRY'
+  | 'INSUFFICIENT_QUANTITY'
+  | 'INCOMPARABLE_UNIT'
+  | 'UNVERIFIED_SUBSTITUTION_ONLY';
+
+export type DiscoveryBucket = 'can_make_now' | 'almost_there' | 'explore_more';
+
+export interface MatchedSubstitutionOut {
+  substitute_name: string;
+  substitute_variant_id: string | null;
+  substitute_family_id: string | null;
+  conversion_ratio: string | null;
+  conversion_unit: string | null;
+  notes: string | null;
+}
+
+export interface IngredientMatchOut {
+  dish_ingredient_id: string;
+  ingredient_name: string;
+  requirement_mode: DiscoveryRequirementMode;
+  requirement_type: DiscoveryRequirementType;
+  required_variant_id: string | null;
+  required_family_id: string | null;
+  status: DiscoveryMatchStatus;
+  matched_via: DiscoveryMatchMethod | null;
+  matched_canonical_ingredient_id: string | null;
+  matched_variant_id: string | null;
+  available_qty: string | null;
+  available_unit: string | null;
+  required_qty: string | null;
+  required_unit: string | null;
+  reason: DiscoveryMatchReason | null;
+  expiring_soon: boolean;
+  earliest_expires_on: string | null;
+  matched_substitution: MatchedSubstitutionOut | null;
+}
+
+export interface DishMatchOut {
+  dish_id: string;
+  slug: string;
+  canonical_name: string;
+  alternative_names: string[];
+  cuisine: string;
+  region: string;
+  meal_types: string[];
+  diet_tags: string[];
+  prep_minutes: number | null;
+  cook_minutes: number | null;
+  default_servings: number;
+  bucket: DiscoveryBucket;
+  required_total: number;
+  required_available: number;
+  required_partial: number;
+  required_missing: number;
+  missing_ingredient_names: string[];
+  expiring_matches: string[];
+  is_saved: boolean;
+  user_feedback_action: string | null;
+  requirements: IngredientMatchOut[];
+}
+
+export interface DishMatchCounts {
+  can_make_now: number;
+  almost_there: number;
+  explore_more: number;
+  [key: string]: number;
+}
+
+export interface DishMatchResponse {
+  can_make_now: DishMatchOut[];
+  almost_there: DishMatchOut[];
+  explore_more: DishMatchOut[];
+  counts: DishMatchCounts;
+}
+
+export type DailyMealCategory = 'breakfast' | 'lunch' | 'snacks' | 'dinner';
+export type DailyPlanStatus = 'pending' | 'generating' | 'ready' | 'failed' | 'unavailable';
+
+export interface DailyMealPlanRecipeOut {
+  id: string;
+  meal_category: DailyMealCategory;
+  position: number;
+  slug: string;
+  title: string;
+  description: string;
+  servings: number;
+  prep_minutes: number;
+  cook_minutes?: number | null;
+  difficulty?: string | null;
+  cuisine?: string | null;
+  dietary_tags: string[];
+  equipment_required: string[];
+  preparation_steps: string[];
+  structured_steps: RecipeStep[];
+  instructions: string[];
+  substitutions: string[];
+  cooking_tips: string[];
+  troubleshooting_tips: string[];
+  serving_result?: string | null;
+  food_safety_notes: string[];
+  availability_bucket: DiscoveryBucket;
+  available_ingredients: RecipeChatIngredient[];
+  partial_ingredients: RecipeChatIngredient[];
+  missing_ingredients: RecipeChatIngredient[];
+  optional_ingredients: RecipeChatIngredient[];
+  quality_status: string;
+  quality_warnings: string[];
+}
+
+export interface DailyMealPlanResponse {
+  status: DailyPlanStatus;
+  local_date: string;
+  timezone: string;
+  active_meal_category: DailyMealCategory;
+  auto_attempted: boolean;
+  manual_regeneration_count: number;
+  manual_regeneration_limit: number;
+  is_stale_fallback: boolean;
+  onboarding_required?: boolean;
+  generated_at?: string | null;
+  weather_summary?: string | null;
+  provider_metadata: Record<string, unknown>;
+  error_code?: string | null;
+  error_message?: string | null;
+  categories: Record<DailyMealCategory, DailyMealPlanRecipeOut[]>;
+  recipes: DailyMealPlanRecipeOut[];
 }

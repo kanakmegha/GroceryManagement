@@ -20,6 +20,8 @@ export const householdQueryKeys = {
     ['household', householdId ?? 'default', 'replenishment'] as const,
   shoppingList: (householdId: string | null) =>
     ['household', householdId ?? 'default', 'shopping-list'] as const,
+  dailyMealPlan: (householdId: string | null) =>
+    ['household', householdId ?? 'default', 'daily-meal-plan'] as const,
 };
 
 /**

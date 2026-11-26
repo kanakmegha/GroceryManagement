@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -15,15 +15,25 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApiClient } from '../auth/useApiClient';
 import { useHousehold } from '../auth/HouseholdContext';
 import {
+  DailyMealCategory,
   HouseholdRecipePreferences,
   InsightsSummaryResponse,
   InventoryLotsResponse,
   InventorySummaryResponse,
   PurchasesListResponse,
   RecipeRecommendation,
-  RecipeRecommendationsResponse,
   ReplenishmentRecommendationsResponse,
 } from '../../shared/api/types';
+import {
+  DAILY_MEAL_CATEGORIES,
+  dailyRecipeToRecommendation,
+  fetchDailyMealPlan,
+  getDailyMealCategoryLabel,
+  getHouseholdMealCategory,
+  isDailyPlanRegenerationLimitReached,
+  refreshDailyPlanAvailability,
+  retryOrRegenerateDailyMealPlan,
+} from './dailyMealPlan';
 import { householdQueryKeys, invalidateHouseholdData } from '../../shared/api/queryKeys';
 import {
   EmptyState,
@@ -41,6 +51,10 @@ import {
   traceRender,
   traceUnmount,
 } from '../../shared/diagnostics/perfTrace';
+import {
+  getDailyPlanPollIntervalMs,
+  resolveHomeMealIdeasState,
+} from './mealIdeasState';
 import {
   computeRecipeAvailability,
   formatIngredientDetailPresentation,
@@ -92,6 +106,8 @@ export function HomeScreen() {
   const { household, user, activeHouseholdId } = useHousehold();
 
   const currentMonth = getCurrentKolkataYearMonth();
+  const [selectedDailyCategory, setSelectedDailyCategory] =
+    useState<DailyMealCategory | null>(null);
   const [selectedYM, setSelectedYM] = useState<{ year: number; month: number }>(
     currentMonth
   );
@@ -183,14 +199,22 @@ export function HomeScreen() {
     staleTime: 60_000,
   });
 
-  const recsQuery = useQuery({
-    queryKey: householdQueryKeys.homeRecommendations(activeHouseholdId),
-    queryFn: () =>
-      apiClient.get<RecipeRecommendationsResponse>(
-        '/api/v1/recipes/recommendations?limit=5&include_references=false&mode=progressive'
-      ),
+  const dailyPlanQuery = useQuery({
+    queryKey: householdQueryKeys.dailyMealPlan(activeHouseholdId),
+    queryFn: () => fetchDailyMealPlan(apiClient),
+    enabled: Boolean(activeHouseholdId),
     staleTime: 300_000,
+    refetchInterval: (query) => getDailyPlanPollIntervalMs(query.state.data),
   });
+
+  const [isRegeneratingDailyPlan, setIsRegeneratingDailyPlan] = useState(false);
+  const [dailyRegenError, setDailyRegenError] = useState<string | null>(null);
+  const regenInFlightRef = useRef(false);
+
+  useEffect(() => {
+    setSelectedDailyCategory(null);
+    setDailyRegenError(null);
+  }, [activeHouseholdId]);
 
   const prefsQuery = useQuery({
     queryKey: ['recipe-preferences', activeHouseholdId],
@@ -220,20 +244,78 @@ export function HomeScreen() {
     summaryQuery.isRefetching ||
     insightsQuery.isRefetching ||
     purchasesQuery.isRefetching ||
-    recsQuery.isRefetching;
+    dailyPlanQuery.isRefetching;
 
   const handleRefresh = useCallback(async () => {
+    await refreshDailyPlanAvailability(apiClient).catch(() => null);
     await invalidateHouseholdData(queryClient, activeHouseholdId);
-  }, [activeHouseholdId, queryClient]);
+  }, [activeHouseholdId, apiClient, queryClient]);
+
+  const handleRetryDailyPlan = useCallback(async () => {
+    if (regenInFlightRef.current || isRegeneratingDailyPlan) {
+      return;
+    }
+    const currentPlan = dailyPlanQuery.data ?? null;
+    const willRegenerate =
+      currentPlan?.status === 'failed' &&
+      !isDailyPlanRegenerationLimitReached(currentPlan);
+
+    if (willRegenerate) {
+      regenInFlightRef.current = true;
+      setIsRegeneratingDailyPlan(true);
+    }
+    setDailyRegenError(null);
+
+    try {
+      const result = await retryOrRegenerateDailyMealPlan({
+        apiClient,
+        currentPlan,
+        isRegenerating: false,
+        refetchPlan: async () => {
+          const refetched = await dailyPlanQuery.refetch();
+          return refetched.data;
+        },
+        onPlanUpdated: (updated) => {
+          if (activeHouseholdId) {
+            queryClient.setQueryData(
+              householdQueryKeys.dailyMealPlan(activeHouseholdId),
+              updated
+            );
+          }
+        },
+      });
+
+      if (result.errorMessage) {
+        setDailyRegenError(result.errorMessage);
+      } else if (result.action === 'regenerated' && activeHouseholdId) {
+        await queryClient.invalidateQueries({
+          queryKey: householdQueryKeys.dailyMealPlan(activeHouseholdId),
+        });
+      }
+    } finally {
+      regenInFlightRef.current = false;
+      setIsRegeneratingDailyPlan(false);
+    }
+  }, [activeHouseholdId, apiClient, dailyPlanQuery, isRegeneratingDailyPlan, queryClient]);
 
   const inventoryItems = summaryQuery.data?.items ?? [];
   const expiringLots = expiringQuery.data?.items ?? [];
   const insights = insightsQuery.data ?? null;
   const recentPurchases = purchasesQuery.data?.items ?? [];
-  const allRecs = recsQuery.data?.items ?? [];
-
-  // Show 3 to 5 context-aware recommendations (Cook Now / Almost Ready / Discover)
-  const displayRecs: RecipeRecommendation[] = allRecs.slice(0, 5);
+  const dailyPlan = dailyPlanQuery.data ?? null;
+  const activeDailyCategory: DailyMealCategory =
+    selectedDailyCategory ??
+    dailyPlan?.active_meal_category ??
+    getHouseholdMealCategory(
+      dailyPlan?.timezone ?? prefsQuery.data?.timezone ?? 'Asia/Kolkata'
+    );
+  const dailyCategoryRecs: RecipeRecommendation[] =
+    dailyPlan?.status === 'ready'
+      ? (dailyPlan.categories[activeDailyCategory] ?? []).map(
+          dailyRecipeToRecommendation
+        )
+      : [];
+  const displayRecs: RecipeRecommendation[] = dailyCategoryRecs;
 
   const handleSavePrefs = useCallback(async () => {
     if (prefsSaving) return;
@@ -251,14 +333,21 @@ export function HomeScreen() {
           max_prep_minutes: prefMaxPrep,
         },
       });
-      await invalidateHouseholdData(queryClient, activeHouseholdId);
-      await prefsQuery.refetch();
-      await recsQuery.refetch();
+      await Promise.all([
+        invalidateHouseholdData(queryClient, activeHouseholdId),
+        queryClient.invalidateQueries({
+          queryKey: ['recipe-preferences', activeHouseholdId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: householdQueryKeys.dailyMealPlan(activeHouseholdId),
+        }),
+      ]);
+      await Promise.all([prefsQuery.refetch(), dailyPlanQuery.refetch()]);
       setPrefsModalVisible(false);
     } finally {
       setPrefsSaving(false);
     }
-  }, [activeHouseholdId, apiClient, prefCuisines, prefDietType, prefMaxPrep, prefsQuery, prefsSaving, queryClient, recsQuery]);
+  }, [activeHouseholdId, apiClient, prefCuisines, prefDietType, prefMaxPrep, prefsQuery, prefsSaving, queryClient]);
 
   const grocerySpend = insights?.grocery_spend_paise ?? 0;
   const outsideSpend = insights?.outside_food_spend_paise ?? 0;
@@ -456,17 +545,25 @@ export function HomeScreen() {
           )}
         </View>
 
-        {/* 3. Context-Aware Meal & Recipe Recommendations */}
+        {/* 3. Context-Aware Daily Meal Plan & Recipe Recommendations */}
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.sectionTitle}>
-                {recsQuery.data?.greeting
-                  ? `${recsQuery.data.greeting} · ${recsQuery.data.meal_window_label ?? 'Meal Ideas'}`
-                  : 'Meal Ideas'}
+                {dailyPlan?.status === 'ready'
+                  ? `Today's ${getDailyMealCategoryLabel(activeDailyCategory)}`
+                  : "Today's Meal Plan"}
               </Text>
-              {recsQuery.data?.weather_summary ? (
-                <Text style={styles.secondaryMetaText}>{recsQuery.data.weather_summary}</Text>
+              {dailyPlan?.status === 'ready' ? (
+                <Text style={styles.secondaryMetaText}>
+                  {dailyPlan.local_date} · {dailyPlan.timezone}
+                  {dailyPlan.is_stale_fallback ? ' (previous plan)' : ''}
+                </Text>
+              ) : null}
+              {dailyPlan?.weather_summary ? (
+                <Text style={styles.secondaryMetaText}>
+                  {dailyPlan.weather_summary}
+                </Text>
               ) : null}
             </View>
             <View style={{ flexDirection: 'row', gap: spacing.md, alignItems: 'center' }}>
@@ -479,23 +576,129 @@ export function HomeScreen() {
             </View>
           </View>
 
-          {recsQuery.isLoading ? (
-            <View style={styles.recLoadingCard}>
-              <ActivityIndicator size="small" color={colors.primary} />
-              <Text style={styles.secondaryMetaText}>
-                Personalising pantry recommendations...
-              </Text>
+          {dailyPlan?.status === 'ready' ? (
+            <View style={styles.dailyCategoryRow}>
+              {DAILY_MEAL_CATEGORIES.map((cat) => {
+                const isSelected = activeDailyCategory === cat;
+                return (
+                  <Pressable
+                    key={cat}
+                    onPress={() => setSelectedDailyCategory(cat)}
+                    style={[
+                      styles.dailyCategoryChip,
+                      isSelected && styles.dailyCategoryChipSelected,
+                    ]}
+                    accessibilityRole="button"
+                  >
+                    <Text
+                      style={[
+                        styles.dailyCategoryChipText,
+                        isSelected && styles.dailyCategoryChipTextSelected,
+                      ]}
+                    >
+                      {getDailyMealCategoryLabel(cat)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
-          ) : displayRecs.length === 0 ? (
-            <EmptyState
-              icon="restaurant-outline"
-              title="No pantry-ready recipe yet"
-              body="Ask AI Chef for ideas or substitutions based on your preferences."
-              actionLabel="Ask AI Chef"
-              onAction={() => router.push('/(tabs)/recipes')}
-            />
-          ) : (
-            <View style={styles.cardList}>
+          ) : null}
+
+          {(() => {
+            const needsPreferencesOnboarding =
+              dailyPlan?.status !== 'ready' &&
+              (dailyPlan?.onboarding_required === true ||
+                prefsQuery.data?.onboarding_completed === false);
+            const mealIdeasState = resolveHomeMealIdeasState({
+              isLoading: dailyPlanQuery.isLoading,
+              isError: dailyPlanQuery.isError,
+              dailyPlanStatus: dailyPlan?.status,
+              onboardingRequired: needsPreferencesOnboarding,
+              itemCount: displayRecs.length,
+            });
+            if (isRegeneratingDailyPlan) {
+              return (
+                <View style={styles.recLoadingCard}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={styles.secondaryMetaText}>
+                    Regenerating today's meal plan...
+                  </Text>
+                </View>
+              );
+            }
+            if (mealIdeasState === 'loading') {
+              return (
+                <View style={styles.recLoadingCard}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={styles.secondaryMetaText}>
+                    Loading today's meal plan...
+                  </Text>
+                </View>
+              );
+            }
+            if (mealIdeasState === 'onboarding') {
+              return (
+                <EmptyState
+                  icon="options-outline"
+                  title="Set your food preferences"
+                  body="Tell us your diet and favorite cuisines to generate your first daily meal plan. Grocery inventory is optional."
+                  actionLabel="Set Food Preferences"
+                  onAction={() => setPrefsModalVisible(true)}
+                />
+              );
+            }
+            if (mealIdeasState === 'pending') {
+              return (
+                <EmptyState
+                  icon="time-outline"
+                  title="Daily meal plan is being prepared"
+                  body="Your household's daily meal plan is scheduled automatically. Check back shortly or ask AI Chef."
+                  actionLabel="Refresh"
+                  onAction={() => void dailyPlanQuery.refetch()}
+                />
+              );
+            }
+            if (mealIdeasState === 'error') {
+              const limitReached =
+                dailyPlan?.status === 'failed' &&
+                isDailyPlanRegenerationLimitReached(dailyPlan);
+              const errorMessage =
+                dailyRegenError ??
+                (limitReached
+                  ? 'Daily regeneration limit reached (1 per day). Try again tomorrow or ask AI Chef.'
+                  : dailyPlan?.error_message ??
+                    (dailyPlanQuery.error instanceof Error
+                      ? dailyPlanQuery.error.message
+                      : 'Unable to fetch the daily meal plan right now.'));
+              return (
+                <ErrorState
+                  title="Could not load today's meal plan"
+                  message={errorMessage}
+                  onRetry={limitReached ? undefined : () => void handleRetryDailyPlan()}
+                  retryLabel={
+                    dailyPlan?.status === 'failed' ? 'Try Again' : 'Retry'
+                  }
+                  retryDisabled={isRegeneratingDailyPlan || limitReached}
+                  secondaryActionLabel={limitReached ? 'Ask AI Chef' : undefined}
+                  onSecondaryAction={
+                    limitReached ? () => router.push('/(tabs)/recipes') : undefined
+                  }
+                />
+              );
+            }
+            if (mealIdeasState === 'empty') {
+              return (
+                <EmptyState
+                  icon="restaurant-outline"
+                  title="No recipes in today's meal plan"
+                  body="Ask AI Chef for ideas or substitutions based on your preferences."
+                  actionLabel="Ask AI Chef"
+                  onAction={() => router.push('/(tabs)/recipes')}
+                />
+              );
+            }
+            return (
+              <View style={styles.cardList}>
               {displayRecs.map((rec) => {
                 const availList = (rec.ingredients ?? []).filter(
                   (i) => i.status === 'available'
@@ -566,8 +769,9 @@ export function HomeScreen() {
                   </Pressable>
                 );
               })}
-            </View>
-          )}
+              </View>
+            );
+          })()}
         </View>
 
         {/* Smart Replenishment Compact Summary */}
@@ -664,6 +868,15 @@ export function HomeScreen() {
             {selectedDetail ? (
               <View style={{ gap: spacing.sm }}>
                 <Text style={styles.whyText}>{selectedDetail.source_label}</Text>
+                <Text style={styles.rowSubtitle}>
+                  {[
+                    selectedDetail.prep_minutes ? `Prep ${selectedDetail.prep_minutes}m` : null,
+                    selectedDetail.cook_minutes ? `Cook ${selectedDetail.cook_minutes}m` : null,
+                    selectedDetail.difficulty ? `Difficulty: ${selectedDetail.difficulty}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Text>
                 {selectedDetail.description ? (
                   <Text style={styles.rowSubtitle}>{selectedDetail.description}</Text>
                 ) : null}
@@ -787,12 +1000,61 @@ export function HomeScreen() {
                     </View>
                   );
                 })()}
+                {(selectedDetail.equipment_required?.length ?? 0) > 0 ? (
+                  <>
+                    <Text style={styles.sectionTitle}>Equipment Needed</Text>
+                    <Text style={styles.rowSubtitle}>
+                      {selectedDetail.equipment_required!.join(' · ')}
+                    </Text>
+                  </>
+                ) : null}
+                {(selectedDetail.preparation_steps?.length ?? 0) > 0 ? (
+                  <>
+                    <Text style={styles.sectionTitle}>Before You Start (Prep)</Text>
+                    {selectedDetail.preparation_steps!.map((prep, i) => (
+                      <Text key={i} style={styles.instructionStepText}>
+                        • {prep}
+                      </Text>
+                    ))}
+                  </>
+                ) : null}
                 <Text style={styles.sectionTitle}>Instructions</Text>
-                {selectedDetail.instructions.map((step, i) => (
-                  <Text key={i} style={styles.instructionStepText}>
-                    {i + 1}. {step}
-                  </Text>
-                ))}
+                {(selectedDetail.structured_steps?.length ?? 0) > 0
+                  ? selectedDetail.structured_steps!.map((st, i) => {
+                      const metaParts = [
+                        st.duration_minutes ? `~${st.duration_minutes}m` : null,
+                        st.heat_level ? `Heat: ${st.heat_level}` : null,
+                        st.equipment?.length ? `Equipment: ${st.equipment.join(', ')}` : null,
+                      ].filter(Boolean);
+                      const qtyEntries = Object.entries(st.ingredient_quantities ?? {});
+                      return (
+                        <View key={i} style={{ marginBottom: spacing.xs }}>
+                          <Text style={styles.rowTitle}>
+                            {st.step_number || i + 1}. {st.title}
+                          </Text>
+                          {metaParts.length > 0 ? (
+                            <Text style={styles.whyText}>{metaParts.join(' · ')}</Text>
+                          ) : null}
+                          <Text style={styles.instructionStepText}>{st.instruction}</Text>
+                          {qtyEntries.length > 0 ? (
+                            <Text style={styles.rowSubtitle}>
+                              Quantities: {qtyEntries.map(([k, v]) => `${k} (${v})`).join(', ')}
+                            </Text>
+                          ) : null}
+                          {st.completion_cue ? (
+                            <Text style={styles.whyText}>Look for: {st.completion_cue}</Text>
+                          ) : null}
+                          {st.caution ? (
+                            <Text style={styles.rowSubtitle}>Caution: {st.caution}</Text>
+                          ) : null}
+                        </View>
+                      );
+                    })
+                  : selectedDetail.instructions.map((step, i) => (
+                      <Text key={i} style={styles.instructionStepText}>
+                        {i + 1}. {step}
+                      </Text>
+                    ))}
                 {selectedDetail.substitutions.length > 0 ? (
                   <>
                     <Text style={styles.sectionTitle}>Substitutions</Text>
@@ -801,6 +1063,32 @@ export function HomeScreen() {
                         • {s}
                       </Text>
                     ))}
+                  </>
+                ) : null}
+                {(selectedDetail.cooking_tips?.length ?? 0) > 0 ? (
+                  <>
+                    <Text style={styles.sectionTitle}>Cooking Tips</Text>
+                    {selectedDetail.cooking_tips!.map((tip, i) => (
+                      <Text key={i} style={styles.rowSubtitle}>
+                        • {tip}
+                      </Text>
+                    ))}
+                  </>
+                ) : null}
+                {(selectedDetail.troubleshooting_tips?.length ?? 0) > 0 ? (
+                  <>
+                    <Text style={styles.sectionTitle}>Troubleshooting</Text>
+                    {selectedDetail.troubleshooting_tips!.map((tip, i) => (
+                      <Text key={i} style={styles.rowSubtitle}>
+                        • {tip}
+                      </Text>
+                    ))}
+                  </>
+                ) : null}
+                {selectedDetail.serving_result ? (
+                  <>
+                    <Text style={styles.sectionTitle}>Expected Result</Text>
+                    <Text style={styles.rowSubtitle}>{selectedDetail.serving_result}</Text>
                   </>
                 ) : null}
               </View>
@@ -1106,6 +1394,32 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  dailyCategoryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  dailyCategoryChip: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderRadius: radii.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  dailyCategoryChipSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  dailyCategoryChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  dailyCategoryChipTextSelected: {
+    color: colors.textOnPrimary,
   },
   recCard: {
     backgroundColor: colors.surface,

@@ -1,7 +1,10 @@
 import {
+  AiProviderStatus,
   BaseUnit,
   MealHistoryItem,
   RecipeChatExternalLink,
+  RecipeChatRequest,
+  RecipeChatResponse,
   RecipeChatSuggestion,
   RecipeRecommendation,
   RecipeStep,
@@ -39,11 +42,15 @@ export interface RecipeDetailTarget {
   source_label: string;
   recommendation_type?: 'COOK_NOW' | 'COOK_WITH_SUBSTITUTIONS' | 'REQUIRES_SHOPPING' | string;
   ingredients: RecipeDetailIngredient[];
+  equipment_required?: string[];
+  preparation_steps?: string[];
   instructions: string[];
   structured_steps?: RecipeStep[];
   quality_warnings?: string[];
   substitutions: string[];
   cooking_tips: string[];
+  troubleshooting_tips?: string[];
+  serving_result?: string | null;
   food_safety_notes: string[];
   uses_expiring_items: string[];
   external_links: RecipeChatExternalLink[];
@@ -92,6 +99,8 @@ export function recommendationToDetail(rec: RecipeRecommendation): RecipeDetailT
         : 'AI-generated recipe'),
     recommendation_type: rec.recommendation_type ?? 'REQUIRES_SHOPPING',
     ingredients,
+    equipment_required: rec.equipment_required ?? [],
+    preparation_steps: rec.preparation_steps ?? [],
     instructions:
       rec.instructions && rec.instructions.length > 0
         ? rec.instructions
@@ -103,6 +112,8 @@ export function recommendationToDetail(rec: RecipeRecommendation): RecipeDetailT
     quality_warnings: rec.quality_warnings ?? [],
     substitutions: rec.substitutions ?? [],
     cooking_tips: rec.cooking_tips ?? [],
+    troubleshooting_tips: rec.troubleshooting_tips ?? [],
+    serving_result: rec.serving_result ?? null,
     food_safety_notes: rec.food_safety_notes ?? [],
     uses_expiring_items: rec.uses_expiring_soon ? ['Expiring pantry items'] : [],
     external_links: verifiedRefs.map((r) => ({
@@ -140,6 +151,8 @@ export function suggestionToDetail(sug: RecipeChatSuggestion): RecipeDetailTarge
         : 'AI-generated recipe'),
     recommendation_type: sug.recommendation_type ?? 'REQUIRES_SHOPPING',
     ingredients,
+    equipment_required: sug.equipment_required ?? [],
+    preparation_steps: sug.preparation_steps ?? [],
     instructions:
       sug.instructions && sug.instructions.length > 0
         ? sug.instructions
@@ -151,6 +164,8 @@ export function suggestionToDetail(sug: RecipeChatSuggestion): RecipeDetailTarge
     quality_warnings: sug.quality_warnings ?? [],
     substitutions: sug.substitutions ?? [],
     cooking_tips: sug.cooking_tips ?? [],
+    troubleshooting_tips: sug.troubleshooting_tips ?? [],
+    serving_result: sug.serving_result ?? null,
     food_safety_notes: sug.food_safety_notes ?? [],
     uses_expiring_items: sug.uses_expiring_items ?? [],
     external_links: verifiedLinks,
@@ -167,6 +182,26 @@ export function scaleQuantityText(
   if (Math.abs(factor - 1) < 0.001) {
     return qtyText;
   }
+  const fmt = (val: number) => {
+    const rounded = Math.round(val * 100) / 100;
+    return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+  };
+  // Range e.g. "90-100 ml" or "90–100 ml"
+  const rangeMatch = qtyText.match(/^(\d+(?:\.\d+)?)\s*([-–])\s*(\d+(?:\.\d+)?)(.*)$/);
+  if (rangeMatch) {
+    const lo = Number(rangeMatch[1]);
+    const hi = Number(rangeMatch[3]);
+    if (Number.isFinite(lo) && Number.isFinite(hi)) {
+      return `${fmt(lo * factor)}${rangeMatch[2]}${fmt(hi * factor)}${rangeMatch[4]}`;
+    }
+  }
+  // Fraction e.g. "1/2 tsp"
+  const fracMatch = qtyText.match(/^(\d+)\s*\/\s*(\d+)(.*)$/);
+  if (fracMatch && Number(fracMatch[2]) > 0) {
+    const fracVal = Number(fracMatch[1]) / Number(fracMatch[2]);
+    return `${fmt(fracVal * factor)}${fracMatch[3]}`;
+  }
+  // Decimal or integer e.g. "150 g"
   const match = qtyText.match(/^(\d+(?:\.\d+)?)(.*)$/);
   if (!match) {
     return qtyText;
@@ -175,9 +210,7 @@ export function scaleQuantityText(
   if (!Number.isFinite(num)) {
     return qtyText;
   }
-  const scaled = Math.round(num * factor * 100) / 100;
-  const formatted = Number.isInteger(scaled) ? String(scaled) : String(scaled);
-  return `${formatted}${match[2]}`;
+  return `${fmt(num * factor)}${match[2]}`;
 }
 
 export function detectStepMinutes(stepText: string): number | null {
@@ -375,12 +408,210 @@ export function convertCompatibleQty(
   return convertCompatibleUnits(qty, fromUnit, toUnit);
 }
 
+export interface CompletePlanLineState {
+  lineId: string;
+  canonical_item_id: string;
+  name: string;
+  productName: string;
+  availableQty: number;
+  lotBaseUnit: BaseUnit;
+  unitCompatible: boolean;
+  lotCount: number;
+  planned_qty: string;
+  base_unit: BaseUnit;
+  actualUsedText: string;
+  wasteQtyText: string;
+  omitted: boolean;
+  sessionConfirmed?: boolean;
+  sessionConfirmedQty?: number;
+  sessionConfirmedUnit?: BaseUnit;
+}
+
+export interface ReconcileCompleteLinesInput {
+  planId: string;
+  planItems: Array<{
+    line_id?: string | null;
+    canonical_item_id: string;
+    name?: string | null;
+    planned_qty: string;
+    base_unit: BaseUnit;
+    available_qty?: string | number | null;
+  }>;
+  activeLots: Array<{
+    id?: string;
+    canonical_item_id: string;
+    item_name?: string | null;
+    status: string;
+    remaining_qty: string | number;
+    base_unit: string;
+    expires_on?: string | null;
+  }>;
+  sessionReportedAvailability?: Record<
+    string,
+    {
+      status: string;
+      persistedToPantry: boolean;
+      availableInRequiredUnit: number;
+      requiredUnit: string;
+    }
+  >;
+  existingLines?: CompletePlanLineState[];
+  todayIso?: string;
+}
+
+export function reconcileCompletePlanLines(
+  input: ReconcileCompleteLinesInput
+): CompletePlanLineState[] {
+  const todayIso = input.todayIso ?? new Date().toISOString().slice(0, 10);
+  const existingById = new Map((input.existingLines ?? []).map((l) => [l.lineId, l]));
+  const sessionMap = input.sessionReportedAvailability ?? {};
+
+  return input.planItems.map((item, idx) => {
+    const lineId = item.line_id || `${input.planId}:${item.canonical_item_id}:${idx}`;
+    const existing = existingById.get(lineId);
+
+    const matchingLots = input.activeLots
+      .filter(
+        (lot) =>
+          lot.canonical_item_id === item.canonical_item_id &&
+          lot.status === 'active' &&
+          Number(lot.remaining_qty) > 0 &&
+          (!lot.expires_on || lot.expires_on >= todayIso)
+      )
+      .sort((a, b) => {
+        if (!a.expires_on && !b.expires_on) return 0;
+        if (!a.expires_on) return 1;
+        if (!b.expires_on) return -1;
+        return a.expires_on.localeCompare(b.expires_on);
+      });
+
+    const compatibleLots = matchingLots.filter((lot) =>
+      areUnitsCompatible(lot.base_unit, item.base_unit)
+    );
+    const lotBaseUnit = (
+      compatibleLots[0]?.base_unit ??
+      matchingLots[0]?.base_unit ??
+      item.base_unit
+    ) as BaseUnit;
+
+    // Compatible lots always win over incompatible ones; only incompatible if lots exist and NONE match.
+    const unitCompatible = compatibleLots.length > 0 || matchingLots.length === 0;
+    const rawLotAvailable = (
+      compatibleLots.length > 0 ? compatibleLots : matchingLots
+    ).reduce((sum, lot) => sum + (Number(lot.remaining_qty) || 0), 0);
+
+    const availableInPlanUnit =
+      matchingLots.length > 0
+        ? unitCompatible
+          ? convertCompatibleQty(rawLotAvailable, lotBaseUnit, item.base_unit) ?? rawLotAvailable
+          : rawLotAvailable
+        : Number(item.available_qty) || 0;
+
+    const resolvedName =
+      (item.name && item.name.trim()) || matchingLots[0]?.item_name || 'Ingredient';
+    const productName = compatibleLots[0]?.item_name || matchingLots[0]?.item_name || resolvedName || 'Pantry Product';
+    const plannedNum = Number(item.planned_qty) || 0;
+
+    const sessionRec = sessionMap[lineId];
+    const hasSessionOnlyConfirm =
+      Boolean(sessionRec) &&
+      !sessionRec.persistedToPantry &&
+      sessionRec.status !== 'unavailable' &&
+      sessionRec.status !== 'skipped' &&
+      sessionRec.availableInRequiredUnit > 0;
+    const hasSessionOmit =
+      Boolean(sessionRec) &&
+      (sessionRec.status === 'unavailable' || sessionRec.status === 'skipped');
+
+    const defaultUsed =
+      unitCompatible && availableInPlanUnit > 0
+        ? Math.min(plannedNum, availableInPlanUnit)
+        : plannedNum;
+
+    if (hasSessionOnlyConfirm && sessionRec) {
+      return {
+        lineId,
+        canonical_item_id: item.canonical_item_id,
+        name: resolvedName,
+        productName,
+        availableQty: availableInPlanUnit,
+        lotBaseUnit,
+        unitCompatible,
+        lotCount: compatibleLots.length > 0 ? compatibleLots.length : matchingLots.length,
+        planned_qty: item.planned_qty,
+        base_unit: item.base_unit,
+        actualUsedText: '0',
+        wasteQtyText: '0',
+        omitted: false,
+        sessionConfirmed: true,
+        sessionConfirmedQty: sessionRec.availableInRequiredUnit,
+        sessionConfirmedUnit: sessionRec.requiredUnit as BaseUnit,
+      };
+    }
+
+    if (hasSessionOmit) {
+      return {
+        lineId,
+        canonical_item_id: item.canonical_item_id,
+        name: resolvedName,
+        productName,
+        availableQty: availableInPlanUnit,
+        lotBaseUnit,
+        unitCompatible,
+        lotCount: compatibleLots.length > 0 ? compatibleLots.length : matchingLots.length,
+        planned_qty: item.planned_qty,
+        base_unit: item.base_unit,
+        actualUsedText: '0',
+        wasteQtyText: '0',
+        omitted: true,
+        sessionConfirmed: false,
+      };
+    }
+
+    const becameCompatible = Boolean(existing && !existing.unitCompatible && unitCompatible);
+    const keepExistingEdits = Boolean(existing && !becameCompatible);
+
+    return {
+      lineId,
+      canonical_item_id: item.canonical_item_id,
+      name: resolvedName,
+      productName,
+      availableQty: availableInPlanUnit,
+      lotBaseUnit,
+      unitCompatible,
+      lotCount: compatibleLots.length > 0 ? compatibleLots.length : matchingLots.length,
+      planned_qty: item.planned_qty,
+      base_unit: item.base_unit,
+      actualUsedText: keepExistingEdits ? existing!.actualUsedText : String(defaultUsed),
+      wasteQtyText: keepExistingEdits ? existing!.wasteQtyText : '0',
+      omitted: keepExistingEdits
+        ? existing!.omitted
+        : availableInPlanUnit <= 0 && plannedNum > 0,
+      sessionConfirmed: false,
+    };
+  });
+}
+
+export function isCompletePlanLineUnresolved(
+  line: CompletePlanLineState,
+  combinedDeductionByCanonical: Record<string, number>
+): boolean {
+  if (line.omitted || line.sessionConfirmed) {
+    return false;
+  }
+  if (!line.unitCompatible) {
+    return true;
+  }
+  const comb = combinedDeductionByCanonical[line.canonical_item_id] ?? 0;
+  return comb > line.availableQty + 1e-6;
+}
+
 export function computeCombinedDeductionByCanonical(
   lines: DeductionLineInput[]
 ): Record<string, number> {
   const totals: Record<string, number> = {};
   for (const l of lines) {
-    if (l.omitted) continue;
+    if (l.omitted || (l as CompletePlanLineState).sessionConfirmed) continue;
     if (l.base_unit && l.lotBaseUnit && !areUnitsCompatible(l.base_unit, l.lotBaseUnit)) {
       continue;
     }
@@ -475,10 +706,14 @@ export interface CookingStepDisplay {
   title: string;
   instruction: string;
   ingredientsUsed: string[];
+  ingredientQuantities: Record<string, string>;
   durationMinutes: number | null;
   heatLevel: string | null;
   technique: string | null;
+  equipment: string[];
   completionCue: string | null;
+  caution: string | null;
+  nextAction: string | null;
 }
 
 export function computeCookingProgress(stepIndex: number, totalSteps: number): number {
@@ -499,6 +734,7 @@ export function stepCookingIndex(
 export function resolveCookingStep(
   detail: RecipeDetailTarget,
   stepIndex: number,
+  targetServings?: number,
 ): CookingStepDisplay {
   const structured = detail.structured_steps ?? [];
   const plain = detail.instructions.length > 0
@@ -506,19 +742,32 @@ export function resolveCookingStep(
     : ['Prepare and cook ingredients.'];
   const totalSteps = structured.length > 0 ? structured.length : plain.length;
   const safeIdx = Math.max(0, Math.min(totalSteps - 1, stepIndex));
+  const baseServings = detail.servings || 2;
+  const effectiveServings = targetServings && targetServings >= 1 ? targetServings : baseServings;
 
   if (structured.length > 0) {
     const st = structured[safeIdx];
+    const scaledQuantities: Record<string, string> = {};
+    for (const [ingKey, qtyVal] of Object.entries(st.ingredient_quantities ?? {})) {
+      scaledQuantities[ingKey] =
+        effectiveServings !== baseServings
+          ? scaleQuantityText(qtyVal, baseServings, effectiveServings)
+          : qtyVal;
+    }
     return {
       stepNumber: st.step_number || safeIdx + 1,
       totalSteps,
       title: st.title || `Step ${safeIdx + 1}`,
       instruction: st.instruction,
       ingredientsUsed: st.ingredients_used ?? [],
+      ingredientQuantities: scaledQuantities,
       durationMinutes: st.duration_minutes ?? detectStepMinutes(st.instruction),
       heatLevel: st.heat_level ?? null,
       technique: st.technique ?? null,
+      equipment: st.equipment ?? [],
       completionCue: st.completion_cue || null,
+      caution: st.caution ?? null,
+      nextAction: st.next_action ?? null,
     };
   }
 
@@ -529,9 +778,130 @@ export function resolveCookingStep(
     title: `Step ${safeIdx + 1}`,
     instruction: text,
     ingredientsUsed: [],
+    ingredientQuantities: {},
     durationMinutes: detectStepMinutes(text),
     heatLevel: null,
     technique: null,
+    equipment: [],
     completionCue: null,
+    caution: null,
+    nextAction: null,
+  };
+}
+
+
+export function buildFallbackCookingDetail(
+  plan: {
+    recipe_id?: string | null;
+    title?: string | null;
+    planned_servings?: number;
+    meal_type?: string | null;
+    items?: Array<{
+      canonical_item_id: string;
+      name?: string;
+      planned_qty: string;
+      base_unit: BaseUnit;
+    }>;
+  },
+  activeLots: Array<{ canonical_item_id: string; item_name?: string }>
+): RecipeDetailTarget {
+  return {
+    recipe_id: plan.recipe_id ?? null,
+    title: plan.title ?? 'Planned Meal',
+    servings: plan.planned_servings || 2,
+    meal_type: plan.meal_type ?? null,
+    source_type: 'ai_generated',
+    source_label: 'Planned meal',
+    ingredients: (plan.items ?? []).map((it) => {
+      const matchingLot = activeLots.find(
+        (lot) => lot.canonical_item_id === it.canonical_item_id
+      );
+      const resolvedName =
+        (it.name && it.name.trim()) || matchingLot?.item_name || 'Ingredient';
+      return {
+        name: resolvedName,
+        canonical_item_id: it.canonical_item_id,
+        quantity: it.planned_qty,
+        base_unit: it.base_unit,
+        available: true,
+      };
+    }),
+    instructions: [
+      `Detailed step-by-step instructions were not saved for ${plan.title ?? 'this meal'}.`,
+      'Prepare your planned ingredients and cook to taste.',
+    ],
+    substitutions: [],
+    cooking_tips: [],
+    food_safety_notes: [],
+    uses_expiring_items: [],
+    external_links: [],
+  };
+}
+
+export const AI_CHEF_CHAT_TIMEOUT_MS = 65_000;
+
+export interface AskChefTurnInput {
+  role: 'user' | 'assistant';
+  text: string;
+  suggestions?: RecipeChatSuggestion[];
+}
+
+export interface MappedAssistantChatTurn {
+  text: string;
+  providerStatus: AiProviderStatus;
+  providerMessage: string | null;
+  followUpQuestions: string[];
+  suggestions: RecipeChatSuggestion[];
+  externalLinks: RecipeChatExternalLink[];
+}
+
+export function buildAskChefPayload(params: {
+  message: string;
+  servings: number;
+  selectedConstraints: string[];
+  hungerLevel: string | null;
+  cookingTimeMinutes: number | null;
+  chatTurns: AskChefTurnInput[];
+  recommendationMode?: 'enjoyed' | 'new' | 'balanced';
+}): RecipeChatRequest {
+  const historyPayload = params.chatTurns.slice(-8).map((t) => ({
+    role: t.role,
+    content:
+      t.role === 'assistant' && t.suggestions && t.suggestions.length > 0
+        ? `${t.text} [Suggested: ${t.suggestions.map((s) => s.title).join(', ')}]`
+        : t.text,
+  }));
+  const effectiveMaxMinutes =
+    params.cookingTimeMinutes ??
+    (params.selectedConstraints.includes('Quick meal') ? 20 : undefined);
+
+  return {
+    message: params.message,
+    servings: params.servings,
+    dietary_constraints:
+      params.selectedConstraints.length > 0 ? params.selectedConstraints : undefined,
+    preference_tags:
+      params.selectedConstraints.length > 0 ? params.selectedConstraints : undefined,
+    hunger_level: params.hungerLevel ?? undefined,
+    max_prep_minutes: effectiveMaxMinutes ?? undefined,
+    recommendation_mode: params.recommendationMode,
+    conversation_history: historyPayload.length > 0 ? historyPayload : undefined,
+  };
+}
+
+export function mapChatResponseToTurn(res: RecipeChatResponse): MappedAssistantChatTurn {
+  const fallbackReply = res.empty_inventory
+    ? 'Your pantry is currently empty. Add or scan groceries first so I can suggest recipes using what you have.'
+    : (res.suggestions?.length ?? 0) > 0
+      ? 'Here are recipe suggestions based on your preferences and pantry.'
+      : res.provider_message || 'No recipe suggestions were returned. Please try refining your request.';
+  const text = (res.reply ?? '').trim() || fallbackReply;
+  return {
+    text,
+    providerStatus: res.provider_status,
+    providerMessage: res.provider_message ?? null,
+    followUpQuestions: res.follow_up_questions ?? [],
+    suggestions: res.suggestions ?? [],
+    externalLinks: (res.external_links ?? []).filter((link) => link.verified === true),
   };
 }

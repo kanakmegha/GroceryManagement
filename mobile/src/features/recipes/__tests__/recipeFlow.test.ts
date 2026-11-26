@@ -1,17 +1,21 @@
 import {
+  AI_CHEF_CHAT_TIMEOUT_MS,
   areUnitsCompatible,
+  buildAskChefPayload,
   buildCompleteLineId,
   buildSelectionOnlyPrompt,
   computeCombinedDeductionByCanonical,
   convertCompatibleQty,
   detectStepMinutes,
   groupMealHistoryByDate,
+  mapChatResponseToTurn,
   recommendationToDetail,
   scaleQuantityText,
   suggestionToDetail,
 } from '../recipeHelpers';
 import type {
   MealHistoryItem,
+  RecipeChatResponse,
   RecipeChatSuggestion,
   RecipeRecommendation,
 } from '../../../shared/api/types';
@@ -155,5 +159,115 @@ describe('AI Chef recipe detail & guided cooking helpers', () => {
       { canonical_item_id: 'cid-choc', base_unit: 'ml', lotBaseUnit: 'pcs', actualUsedText: '500', wasteQtyText: '0', omitted: false },
     ]);
     expect(mixed['cid-choc']).toBe(1);
+  });
+
+  it('Ask Chef Get Suggestions builds payload with preferences, 65s timeout, and follow-up history', () => {
+    expect(AI_CHEF_CHAT_TIMEOUT_MS).toBeGreaterThanOrEqual(60_000);
+
+    const prompt = buildSelectionOnlyPrompt({
+      customText: '',
+      preferences: ['Comforting', 'Sweet', 'Light meal'],
+      hungerLevel: 'Light appetite',
+      maxMinutes: 15,
+      servings: 2,
+    });
+    expect(prompt).toContain('Comforting, Sweet, Light meal');
+    expect(prompt).toContain('light appetite');
+    expect(prompt).toContain('15 minutes');
+    expect(prompt).toContain('2 servings');
+
+    const payload = buildAskChefPayload({
+      message: prompt,
+      servings: 2,
+      selectedConstraints: ['Comforting', 'Sweet', 'Light meal'],
+      hungerLevel: 'Light appetite',
+      cookingTimeMinutes: 15,
+      chatTurns: [
+        { role: 'user', text: 'What can I make?' },
+        {
+          role: 'assistant',
+          text: 'Try Sweet Banana Oatmeal.',
+          suggestions: [
+            {
+              title: 'Sweet Banana Oatmeal',
+              servings: 2,
+              available_ingredients: [],
+              missing_ingredients: [],
+              instructions: [],
+            },
+          ],
+        },
+      ],
+    });
+    expect(payload.max_prep_minutes).toBe(15);
+    expect(payload.conversation_history).toEqual([
+      { role: 'user', content: 'What can I make?' },
+      {
+        role: 'assistant',
+        content: 'Try Sweet Banana Oatmeal. [Suggested: Sweet Banana Oatmeal]',
+      },
+    ]);
+  });
+
+  it('Ask Chef maps live, fallback_error, and empty_inventory responses to visible assistant turns', () => {
+    const liveRes: RecipeChatResponse = {
+      reply: 'Here is a warm 15-minute sweet banana porridge.',
+      provider_status: 'live',
+      provider_message: null,
+      empty_inventory: false,
+      follow_up_questions: ['Would you like cinnamon on top?'],
+      suggestions: [
+        {
+          title: 'Warm Banana Oats',
+          servings: 2,
+          available_ingredients: [],
+          missing_ingredients: [],
+          instructions: [],
+        },
+      ],
+      external_links: [],
+    };
+    const liveTurn = mapChatResponseToTurn(liveRes);
+    expect(liveTurn.text).toBe(liveRes.reply);
+    expect(liveTurn.suggestions).toHaveLength(1);
+    expect(liveTurn.providerStatus).toBe('live');
+
+    const errRes: RecipeChatResponse = {
+      reply: '',
+      provider_status: 'fallback_error',
+      provider_message: 'AI provider unavailable (ReadTimeout); showing deterministic suggestions.',
+      empty_inventory: false,
+      follow_up_questions: [],
+      suggestions: [],
+      external_links: [],
+    };
+    const errTurn = mapChatResponseToTurn(errRes);
+    expect(errTurn.text).toContain('AI provider unavailable');
+    expect(errTurn.providerStatus).toBe('fallback_error');
+
+    const emptyRes: RecipeChatResponse = {
+      reply: 'Your pantry is currently empty. Add or scan groceries first.',
+      provider_status: 'live',
+      provider_message: null,
+      empty_inventory: true,
+      follow_up_questions: [],
+      suggestions: [],
+      external_links: [],
+    };
+    const emptyTurn = mapChatResponseToTurn(emptyRes);
+    expect(emptyTurn.text).toContain('pantry is currently empty');
+  });
+
+  it('includes recommendation_mode in Ask Chef payload when specified', () => {
+    const payload = buildAskChefPayload({
+      message: 'Suggest dinner',
+      servings: 2,
+      selectedConstraints: ['Vegetarian'],
+      hungerLevel: null,
+      cookingTimeMinutes: 20,
+      chatTurns: [],
+      recommendationMode: 'enjoyed',
+    });
+    expect(payload.recommendation_mode).toBe('enjoyed');
   });
 });

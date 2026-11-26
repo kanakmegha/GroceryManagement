@@ -362,4 +362,41 @@ describe('createApiClient', () => {
       message: 'Aborted by user',
     });
   });
+
+  it('honors per-request timeoutMs override on post() above defaultTimeoutMs', async () => {
+    jest.useFakeTimers();
+    const fetchMock = jest.fn((_url: string, init?: RequestInit) => {
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(new Error('The operation was aborted.'));
+        });
+      });
+    });
+
+    const client = createApiClient({
+      baseUrl: 'http://localhost:8001',
+      getToken: async () => 'jwt_1',
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      defaultTimeoutMs: 15_000,
+    });
+
+    let settled = false;
+    const reqPromise = client
+      .post('/api/v1/recipes/chat', { message: 'hi' }, { timeoutMs: 65_000 })
+      .catch((err) => {
+        settled = true;
+        return err;
+      });
+
+    await jest.advanceTimersByTimeAsync(16_000);
+    expect(settled).toBe(false);
+
+    await jest.advanceTimersByTimeAsync(50_000);
+    const err = (await reqPromise) as ApiClientError;
+    expect(settled).toBe(true);
+    expect(err).toBeInstanceOf(ApiClientError);
+    expect(err.code).toBe('REQUEST_TIMEOUT');
+    expect(err.message).toContain('65s');
+    jest.useRealTimers();
+  });
 });

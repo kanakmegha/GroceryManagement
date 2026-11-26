@@ -1,4 +1,5 @@
 import {
+  buildFallbackCookingDetail,
   computeCookingProgress,
   resolveCookingStep,
   stepCookingIndex,
@@ -109,5 +110,35 @@ describe('Phase 7.6 Dedicated Cooking Mode & Structured Steps', () => {
     expect(s0.title).toBe('Step 1');
     expect(s0.durationMinutes).toBe(5);
     expect(resolveCookingStep(plainOnly, 1).durationMinutes).toBeNull();
+  });
+});
+
+
+describe('buildFallbackCookingDetail', () => {
+  it('excludes inventory bookkeeping text and preserves planned ingredients', () => {
+    const fallback = buildFallbackCookingDetail(
+      {
+        recipe_id: null,
+        title: 'Spiced Chana-Stuffed Paratha',
+        planned_servings: 2,
+        items: [
+          {
+            canonical_item_id: 'item-1',
+            name: 'Chana Dal',
+            planned_qty: '80',
+            base_unit: 'g',
+          },
+        ],
+      },
+      []
+    );
+    expect(fallback.title).toBe('Spiced Chana-Stuffed Paratha');
+    expect(fallback.ingredients).toHaveLength(1);
+    expect(fallback.ingredients[0].name).toBe('Chana Dal');
+    expect(
+      fallback.instructions.every(
+        (step) => !step.toLowerCase().includes('confirm actual quantities')
+      )
+    ).toBe(true);
   });
 });

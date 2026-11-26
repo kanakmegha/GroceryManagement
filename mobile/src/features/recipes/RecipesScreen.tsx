@@ -15,7 +15,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "../auth/useApiClient";
-import { invalidateHouseholdData } from "../../shared/api/queryKeys";
+import {
+  householdQueryKeys,
+  invalidateHouseholdData,
+} from "../../shared/api/queryKeys";
 import { useHousehold } from "../auth/HouseholdContext";
 import {
   AiProviderStatus,
@@ -25,6 +28,7 @@ import {
   CookingPlan,
   CookingPlansListResponse,
   CreateCookingPlanRequest,
+  HouseholdRecipePreferences,
   InventoryLot,
   InventoryLotsResponse,
   MealFeedbackRequest,
@@ -36,8 +40,17 @@ import {
   RecipeChatSuggestion,
   RecipeRecommendation,
   RecipeRecommendationsResponse,
+  RecommendationMode,
 } from "../../shared/api/types";
 import { ApiClientError } from "../../shared/api/client";
+import {
+  buildSessionAvailabilityRecord,
+  evaluateReportedAvailability,
+  getCompatibleUnitsForUnit,
+  ReportedAvailabilityEntry,
+  ReportedUnit,
+  toCanonicalBaseUnit,
+} from "./pantryReconciliation";
 import {
   EmptyState,
   ErrorState,
@@ -50,15 +63,22 @@ import {
 } from "../../shared/format/units";
 import { colors, layout, radii, spacing } from "../../shared/theme/tokens";
 import {
+  AI_CHEF_CHAT_TIMEOUT_MS,
   areUnitsCompatible,
+  buildAskChefPayload,
   buildCompleteLineId,
+  buildFallbackCookingDetail,
   buildSelectionOnlyPrompt,
+  CompletePlanLineState,
   computeCombinedDeductionByCanonical,
   computeCookingProgress,
   convertCompatibleQty,
   detectStepMinutes,
   groupMealHistoryByDate,
+  isCompletePlanLineUnresolved,
+  mapChatResponseToTurn,
   RecipeDetailTarget,
+  reconcileCompletePlanLines,
   recommendationToDetail,
   resolveCookingStep,
   scaleQuantityText,
@@ -75,22 +95,6 @@ interface ChatTurn {
   followUpQuestions?: string[];
   suggestions?: RecipeChatSuggestion[];
   externalLinks?: RecipeChatExternalLink[];
-}
-
-interface CompletePlanLineState {
-  lineId: string;
-  canonical_item_id: string;
-  name: string;
-  productName: string;
-  availableQty: number;
-  lotBaseUnit: BaseUnit;
-  unitCompatible: boolean;
-  lotCount: number;
-  planned_qty: string;
-  base_unit: BaseUnit;
-  actualUsedText: string;
-  wasteQtyText: string;
-  omitted: boolean;
 }
 
 interface MissingResolutionTarget {
@@ -193,6 +197,7 @@ export function RecipesScreen() {
   const [selectedConstraints, setSelectedConstraints] = useState<string[]>([]);
   const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
   const [isSendingChat, setIsSendingChat] = useState(false);
+  const isSendingChatRef = useRef(false);
   const [latestProviderStatus, setLatestProviderStatus] = useState<
     AiProviderStatus | null
   >(null);
@@ -200,6 +205,10 @@ export function RecipesScreen() {
     string | null
   >(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [recommendationMode, setRecommendationMode] = useState<RecommendationMode>("balanced");
+  const [showPersonalisationPrompt, setShowPersonalisationPrompt] = useState(false);
+  const [isSavingPrefMode, setIsSavingPrefMode] = useState(false);
 
   // Cooking plan actions
   const [isStartingPlan, setIsStartingPlan] = useState(false);
@@ -224,9 +233,14 @@ export function RecipesScreen() {
   >(null);
   const [resolveNameText, setResolveNameText] = useState("");
   const [resolveQtyText, setResolveQtyText] = useState("");
-  const [resolveUnit, setResolveUnit] = useState<BaseUnit>("g");
+  const [resolveUnit, setResolveUnit] = useState<ReportedUnit>("g");
   const [resolvePriceText, setResolvePriceText] = useState("");
   const [resolveMerchantText, setResolveMerchantText] = useState("");
+  const [resolveNoteText, setResolveNoteText] = useState("");
+  const [resolvePersistToPantry, setResolvePersistToPantry] = useState(false);
+  const [sessionReportedAvailability, setSessionReportedAvailability] = useState<
+    Record<string, ReportedAvailabilityEntry>
+  >({});
   const [isResolvingIngredient, setIsResolvingIngredient] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
   const [shoppingRequirements, setShoppingRequirements] = useState<
@@ -330,7 +344,7 @@ export function RecipesScreen() {
           historyParams.set("date_from", d.toISOString().slice(0, 10));
         }
 
-        const [plansRes, historyRes, lotsRes] = await Promise.all([
+        const [plansRes, historyRes, lotsRes, prefsRes] = await Promise.all([
           apiClient.get<CookingPlansListResponse>(
             "/api/v1/cooking-plans?status=planned&limit=10",
           ),
@@ -340,10 +354,21 @@ export function RecipesScreen() {
           apiClient
             .get<InventoryLotsResponse>("/api/v1/inventory/lots?status=active")
             .catch(() => ({ items: [] as InventoryLot[] })),
+          apiClient
+            .get<HouseholdRecipePreferences>("/api/v1/recipes/preferences")
+            .catch(() => null),
         ]);
         setActivePlans(plansRes.items ?? []);
         setMealHistory(historyRes.items ?? []);
         setActiveLots(lotsRes.items ?? []);
+        if (prefsRes) {
+          if (prefsRes.recommendation_mode) {
+            setRecommendationMode(prefsRes.recommendation_mode);
+          }
+          setShowPersonalisationPrompt(
+            Boolean(prefsRes.should_show_personalisation_prompt),
+          );
+        }
         setHistoryTotal(historyRes.total ?? (historyRes.items?.length ?? 0));
         setFrequentlyCooked(historyRes.frequently_cooked ?? []);
         setFavouriteMeals(historyRes.favourite_meals ?? []);
@@ -393,6 +418,41 @@ export function RecipesScreen() {
     }
   }, []);
 
+  const handleUpdateRecommendationMode = useCallback(
+    async (
+      mode: RecommendationMode | null,
+      dismissOnly = false,
+    ) => {
+      if (isSavingPrefMode) return;
+      setIsSavingPrefMode(true);
+      try {
+        const updated = await apiClient.request<HouseholdRecipePreferences>(
+          "/api/v1/recipes/preferences/recommendation-mode",
+          {
+            method: "PATCH",
+            body: dismissOnly
+              ? { dismiss_personalisation_prompt: true }
+              : {
+                recommendation_mode: mode,
+                dismiss_personalisation_prompt: true,
+              },
+          },
+        );
+        if (updated.recommendation_mode) {
+          setRecommendationMode(updated.recommendation_mode);
+        }
+        setShowPersonalisationPrompt(
+          Boolean(updated.should_show_personalisation_prompt),
+        );
+      } catch {
+        // Non-blocking preference update
+      } finally {
+        setIsSavingPrefMode(false);
+      }
+    },
+    [apiClient, isSavingPrefMode],
+  );
+
   const handleSendChat = useCallback(async (overrideMessage?: string) => {
     const promptText = overrideMessage?.trim()
       ? overrideMessage.trim()
@@ -403,11 +463,11 @@ export function RecipesScreen() {
         maxMinutes: cookingTimeMinutes,
         servings,
       });
-    if (!promptText || isSendingChat) {
+    if (!promptText || isSendingChat || isSendingChatRef.current) {
       return;
     }
 
-    setActionError(null);
+    setChatError(null);
     const userTurn: ChatTurn = {
       id: `user-${Date.now()}`,
       role: "user",
@@ -417,61 +477,46 @@ export function RecipesScreen() {
     if (!overrideMessage) {
       setChatInput("");
     }
+    isSendingChatRef.current = true;
     setIsSendingChat(true);
 
     try {
-      const historyPayload = chatTurns.slice(-8).map((t) => ({
-        role: t.role,
-        content:
-          t.role === "assistant" && t.suggestions && t.suggestions.length > 0
-            ? `${t.text} [Suggested: ${
-              t.suggestions.map((s) => s.title).join(", ")
-            }]`
-            : t.text,
-      }));
-      const effectiveMaxMinutes = cookingTimeMinutes ??
-        (selectedConstraints.includes("Quick meal") ? 20 : undefined);
-      const payload: RecipeChatRequest = {
+      const payload = buildAskChefPayload({
         message: promptText,
         servings,
-        dietary_constraints: selectedConstraints.length > 0
-          ? selectedConstraints
-          : undefined,
-        preference_tags: selectedConstraints.length > 0
-          ? selectedConstraints
-          : undefined,
-        hunger_level: hungerLevel ?? undefined,
-        max_prep_minutes: effectiveMaxMinutes ?? undefined,
-        conversation_history: historyPayload.length > 0
-          ? historyPayload
-          : undefined,
-      };
+        selectedConstraints,
+        hungerLevel,
+        cookingTimeMinutes,
+        chatTurns,
+        recommendationMode,
+      });
       const res = await apiClient.post<RecipeChatResponse>(
         "/api/v1/recipes/chat",
         payload,
+        { timeoutMs: AI_CHEF_CHAT_TIMEOUT_MS },
       );
-      setLatestProviderStatus(res.provider_status);
-      setLatestProviderMessage(res.provider_message ?? null);
+      const mapped = mapChatResponseToTurn(res);
+      setLatestProviderStatus(mapped.providerStatus);
+      setLatestProviderMessage(mapped.providerMessage);
 
       const assistantTurn: ChatTurn = {
         id: `assistant-${Date.now()}`,
         role: "assistant",
-        text: res.reply,
-        providerStatus: res.provider_status,
-        providerMessage: res.provider_message ?? null,
-        followUpQuestions: res.follow_up_questions ?? [],
-        suggestions: res.suggestions ?? [],
-        externalLinks: (res.external_links ?? []).filter(
-          (link) => link.verified === true,
-        ),
+        text: mapped.text,
+        providerStatus: mapped.providerStatus,
+        providerMessage: mapped.providerMessage,
+        followUpQuestions: mapped.followUpQuestions,
+        suggestions: mapped.suggestions,
+        externalLinks: mapped.externalLinks,
       };
       setChatTurns((prev) => [...prev, assistantTurn]);
     } catch (err) {
       const message = err instanceof ApiClientError
         ? err.message
         : "AI recipe chat request failed.";
-      setActionError(message);
+      setChatError(message);
     } finally {
+      isSendingChatRef.current = false;
       setIsSendingChat(false);
     }
   }, [
@@ -481,6 +526,7 @@ export function RecipesScreen() {
     cookingTimeMinutes,
     hungerLevel,
     isSendingChat,
+    recommendationMode,
     selectedConstraints,
     servings,
   ]);
@@ -753,6 +799,51 @@ export function RecipesScreen() {
       }
 
       const missing = Math.max(0, reqNum - availInReqUnit);
+      const sessionRep = sessionReportedAvailability[itemKey];
+      if (sessionRep) {
+        if (sessionRep.status === "sufficient") {
+          return {
+            displayName,
+            requiredQty: reqNum,
+            availableQty: sessionRep.availableInRequiredUnit,
+            availableUnit: ing.base_unit,
+            unitCompatible: true,
+            missingQty: 0,
+            isResolved: true,
+            statusLabel: sessionRep.persistedToPantry
+              ? "Available (saved to pantry)"
+              : `Session-reported (${formatQuantityWithUnit(sessionRep.availableInRequiredUnit, ing.base_unit)})`,
+            isOk: true,
+          };
+        }
+        if (sessionRep.status === "insufficient") {
+          return {
+            displayName,
+            requiredQty: reqNum,
+            availableQty: sessionRep.availableInRequiredUnit,
+            availableUnit: ing.base_unit,
+            unitCompatible: true,
+            missingQty: sessionRep.shortageQty,
+            isResolved: false,
+            statusLabel: `Session-reported: need ${formatQuantityWithUnit(sessionRep.shortageQty, ing.base_unit)} more`,
+            isOk: false,
+          };
+        }
+        return {
+          displayName,
+          requiredQty: reqNum,
+          availableQty: 0,
+          availableUnit: ing.base_unit,
+          unitCompatible: true,
+          missingQty: reqNum,
+          isResolved: false,
+          statusLabel:
+            sessionRep.status === "unavailable"
+              ? "Marked unavailable"
+              : "Skipped for this session",
+          isOk: false,
+        };
+      }
       const shopReq = shoppingRequirements[itemKey];
       return {
         displayName,
@@ -768,7 +859,12 @@ export function RecipesScreen() {
         isOk: false,
       };
     },
-    [acceptedSubstitutions, activeLots, shoppingRequirements],
+    [
+      acceptedSubstitutions,
+      activeLots,
+      sessionReportedAvailability,
+      shoppingRequirements,
+    ],
   );
 
   const openMissingResolutionModal = useCallback(
@@ -786,12 +882,14 @@ export function RecipesScreen() {
         String(params.requiredQty > 0 ? params.requiredQty : 1),
       );
       setResolveUnit(
-        (["g", "ml", "pcs"].includes(params.unit)
+        (["g", "kg", "ml", "l", "pcs", "dozen"].includes(params.unit)
           ? params.unit
-          : "g") as BaseUnit,
+          : "g") as ReportedUnit,
       );
       setResolvePriceText("");
       setResolveMerchantText("");
+      setResolveNoteText("");
+      setResolvePersistToPantry(false);
       setResolveError(null);
     },
     [],
@@ -816,47 +914,86 @@ export function RecipesScreen() {
 
     try {
       if (resolveTarget.mode === "have") {
-        // Check if an existing active lot matches canonical_item_id + compatible unit
-        const existingLot = resolveTarget.canonical_item_id
-          ? activeLots.find(
-            (lot) =>
-              lot.canonical_item_id === resolveTarget.canonical_item_id &&
-              lot.status === "active" &&
-              areUnitsCompatible(lot.base_unit, resolveUnit),
-          )
-          : undefined;
+        const targetUnit = (
+          ["g", "kg", "ml", "l", "pcs", "dozen"].includes(resolveTarget.unit)
+            ? resolveTarget.unit
+            : resolveUnit
+        ) as BaseUnit;
+        const evalRes = evaluateReportedAvailability({
+          reportedQty: qtyNum,
+          reportedUnit: resolveUnit,
+          requiredQty: resolveTarget.requiredQty,
+          requiredUnit: targetUnit,
+        });
+        if (!evalRes.ok) {
+          setResolveError(evalRes.error);
+          setIsResolvingIngredient(false);
+          return;
+        }
 
-        if (existingLot) {
-          const converted =
-            convertCompatibleQty(qtyNum, resolveUnit, existingLot.base_unit) ??
-              qtyNum;
-          await apiClient.post(
-            `/api/v1/inventory/lots/${existingLot.id}/adjust`,
-            {
-              event_type: "ADJUSTMENT_IN",
-              quantity_delta: converted.toFixed(3),
-              notes: `Confirmed on-hand stock for ${cleanName}`,
-            },
-          );
-        } else {
-          let targetCanonicalId = resolveTarget.canonical_item_id;
-          // If existing lots use an incompatible unit or no canonical ID exists, create a dedicated canonical item or lot in the chosen unit
-          if (!targetCanonicalId) {
-            const catRes = await apiClient.post<{ id: string }>(
-              "/api/v1/catalog/items",
+        const record = buildSessionAvailabilityRecord({
+          key: resolveTarget.key,
+          name: cleanName,
+          canonical_item_id: resolveTarget.canonical_item_id,
+          reportedQty: qtyNum,
+          reportedUnit: resolveUnit,
+          requiredQty: resolveTarget.requiredQty,
+          requiredUnit: targetUnit,
+          persistedToPantry: resolvePersistToPantry,
+          note: resolveNoteText,
+        });
+
+        setSessionReportedAvailability((prev) => ({
+          ...prev,
+          [resolveTarget.key]: record,
+        }));
+
+        if (resolvePersistToPantry) {
+          const normalized = toCanonicalBaseUnit(qtyNum, resolveUnit);
+          // Check if an existing active lot matches canonical_item_id + compatible unit
+          const existingLot = resolveTarget.canonical_item_id
+            ? activeLots.find(
+              (lot) =>
+                lot.canonical_item_id === resolveTarget.canonical_item_id &&
+                lot.status === "active" &&
+                areUnitsCompatible(lot.base_unit, normalized.unit),
+            )
+            : undefined;
+
+          if (existingLot) {
+            const converted =
+              convertCompatibleQty(
+                normalized.qty,
+                normalized.unit,
+                existingLot.base_unit,
+              ) ?? normalized.qty;
+            await apiClient.post(
+              `/api/v1/inventory/lots/${existingLot.id}/adjust`,
               {
-                name: cleanName,
-                category: "grocery",
-                default_base_unit: resolveUnit,
+                event_type: "ADJUSTMENT_IN",
+                quantity_delta: converted.toFixed(3),
+                notes: resolveNoteText.trim() || `Confirmed on-hand stock for ${cleanName}`,
               },
             );
-            targetCanonicalId = catRes.id;
+          } else {
+            let targetCanonicalId = resolveTarget.canonical_item_id;
+            if (!targetCanonicalId) {
+              const catRes = await apiClient.post<{ id: string }>(
+                "/api/v1/catalog/items",
+                {
+                  name: cleanName,
+                  category: "grocery",
+                  default_base_unit: normalized.unit,
+                },
+              );
+              targetCanonicalId = catRes.id;
+            }
+            await apiClient.post("/api/v1/inventory/lots", {
+              canonical_item_id: targetCanonicalId,
+              remaining_qty: normalized.qty.toFixed(3),
+              base_unit: normalized.unit,
+            });
           }
-          await apiClient.post("/api/v1/inventory/lots", {
-            canonical_item_id: targetCanonicalId,
-            remaining_qty: qtyNum.toFixed(3),
-            base_unit: resolveUnit,
-          });
         }
       } else {
         // "I bought it": record manual purchase + confirm to create eligible pantry lot & purchase accounting
@@ -876,8 +1013,8 @@ export function RecipesScreen() {
                 canonical_item_id: resolveTarget.canonical_item_id ?? undefined,
                 display_name: cleanName,
                 category: "grocery",
-                qty: qtyNum,
-                unit: resolveUnit,
+                qty: toCanonicalBaseUnit(qtyNum, resolveUnit).qty,
+                unit: toCanonicalBaseUnit(qtyNum, resolveUnit).unit,
                 unit_price_paise: pricePaise,
                 line_total_paise: pricePaise,
                 track_inventory: true,
@@ -924,128 +1061,70 @@ export function RecipesScreen() {
   ]);
 
   const openGuidedForExistingPlan = useCallback(
-    (plan: CookingPlan) => {
-      const saved = recipeDetailsByPlanId[plan.id];
-      const detail: RecipeDetailTarget = saved ?? {
-        recipe_id: plan.recipe_id ?? null,
-        title: plan.title ?? "Planned Meal",
-        servings: plan.planned_servings || 2,
-        meal_type: null,
-        source_type: "ai_generated",
-        source_label: "AI-generated recipe",
-        ingredients: (plan.items ?? []).map((it) => {
-          const matchingLot = activeLots.find(
-            (lot) => lot.canonical_item_id === it.canonical_item_id,
+    async (plan: CookingPlan) => {
+      let detail: RecipeDetailTarget | undefined = recipeDetailsByPlanId[plan.id];
+
+      if (!detail && plan.recipe_id) {
+        const cachedRecs = queryClient.getQueryData<RecipeRecommendationsResponse>(
+          householdQueryKeys.homeRecommendations(activeHouseholdId),
+        );
+        const cachedMatch = cachedRecs?.items?.find(
+          (r) => r.recipe_id === plan.recipe_id,
+        );
+        if (cachedMatch) {
+          detail = recommendationToDetail(cachedMatch);
+        }
+      }
+
+      if (!detail && plan.recipe_id) {
+        try {
+          const fetched = await apiClient.get<RecipeRecommendation>(
+            `/api/v1/recipes/catalogue/${encodeURIComponent(plan.recipe_id)}`,
           );
-          const resolvedName = (it.name && it.name.trim()) ||
-            matchingLot?.item_name ||
-            "Ingredient";
-          return {
-            name: resolvedName,
-            canonical_item_id: it.canonical_item_id,
-            quantity: it.planned_qty,
-            base_unit: it.base_unit,
-            available: true,
-          };
-        }),
-        instructions: [
-          `Prepare and measure ingredients for ${plan.title ?? "this meal"}.`,
-          "Cook according to your planned recipe and adjust seasoning to taste.",
-          "Confirm actual quantities used once finished.",
-        ],
-        substitutions: [],
-        cooking_tips: [],
-        food_safety_notes: [],
-        uses_expiring_items: [],
-        external_links: [],
-      };
+          detail = recommendationToDetail(fetched);
+          setRecipeDetailsByPlanId((prev) => ({ ...prev, [plan.id]: detail! }));
+        } catch {
+          // Non-catalogue (e.g. ad-hoc AI Chef) plans fall through to safe cooking-only fallback.
+        }
+      }
+
+      const resolvedDetail = detail ?? buildFallbackCookingDetail(plan, activeLots);
       setShowFinishPrompt(false);
-      setGuidedSession({ plan, detail });
+      setGuidedSession({ plan, detail: resolvedDetail });
     },
-    [activeLots, recipeDetailsByPlanId],
+    [activeHouseholdId, activeLots, apiClient, queryClient, recipeDetailsByPlanId],
   );
 
   const openCompleteMealModal = useCallback(
     (plan: CookingPlan) => {
-      const todayIso = new Date().toISOString().slice(0, 10);
       setCompletingPlan(plan);
       setCompleteLines(
-        (plan.items ?? []).map((item, idx) => {
-          const matchingLots = activeLots
-            .filter(
-              (lot) =>
-                lot.canonical_item_id === item.canonical_item_id &&
-                lot.status === "active" &&
-                Number(lot.remaining_qty) > 0 &&
-                (!lot.expires_on || lot.expires_on >= todayIso),
-            )
-            .sort((a, b) => {
-              if (!a.expires_on && !b.expires_on) return 0;
-              if (!a.expires_on) return 1;
-              if (!b.expires_on) return -1;
-              return a.expires_on.localeCompare(b.expires_on);
-            });
-
-          const compatibleLots = matchingLots.filter((lot) =>
-            areUnitsCompatible(lot.base_unit, item.base_unit)
-          );
-          const lotBaseUnit = (
-            compatibleLots[0]?.base_unit ??
-              matchingLots[0]?.base_unit ??
-              item.base_unit
-          ) as BaseUnit;
-          const unitCompatible = matchingLots.length === 0 ||
-            areUnitsCompatible(item.base_unit, lotBaseUnit);
-
-          const rawLotAvailable = (
-            compatibleLots.length > 0 ? compatibleLots : matchingLots
-          ).reduce((sum, lot) => sum + (Number(lot.remaining_qty) || 0), 0);
-
-          const availableInPlanUnit = matchingLots.length > 0
-            ? unitCompatible
-              ? convertCompatibleQty(
-                rawLotAvailable,
-                lotBaseUnit,
-                item.base_unit,
-              ) ?? rawLotAvailable
-              : rawLotAvailable
-            : Number(item.available_qty) || 0;
-
-          const resolvedName = (item.name && item.name.trim()) ||
-            matchingLots[0]?.item_name ||
-            "Ingredient";
-          const productName = matchingLots[0]?.item_name || resolvedName ||
-            "Pantry Product";
-
-          const plannedNum = Number(item.planned_qty) || 0;
-          // Never silently clamp incompatible units or invent conversions; prefill planned if available & compatible
-          const defaultUsed = unitCompatible && availableInPlanUnit > 0
-            ? Math.min(plannedNum, availableInPlanUnit)
-            : plannedNum;
-
-          return {
-            lineId: buildCompleteLineId(plan.id, item, idx),
-            canonical_item_id: item.canonical_item_id,
-            name: resolvedName,
-            productName,
-            availableQty: availableInPlanUnit,
-            lotBaseUnit,
-            unitCompatible,
-            lotCount: compatibleLots.length > 0
-              ? compatibleLots.length
-              : matchingLots.length,
-            planned_qty: item.planned_qty,
-            base_unit: item.base_unit,
-            actualUsedText: String(defaultUsed),
-            wasteQtyText: "0",
-            omitted: availableInPlanUnit <= 0 && plannedNum > 0,
-          };
+        reconcileCompletePlanLines({
+          planId: plan.id,
+          planItems: plan.items ?? [],
+          activeLots,
+          sessionReportedAvailability,
         }),
       );
       setCompleteError(null);
     },
-    [activeLots],
+    [activeLots, sessionReportedAvailability],
   );
+
+  useEffect(() => {
+    if (!completingPlan) {
+      return;
+    }
+    setCompleteLines((prev) =>
+      reconcileCompletePlanLines({
+        planId: completingPlan.id,
+        planItems: completingPlan.items ?? [],
+        activeLots,
+        sessionReportedAvailability,
+        existingLines: prev,
+      }),
+    );
+  }, [activeLots, completingPlan, sessionReportedAvailability]);
 
   const handleCompleteMeal = useCallback(async () => {
     if (!completingPlan || isCompleting) {
@@ -1056,6 +1135,21 @@ export function RecipesScreen() {
     const combinedTotals = computeCombinedDeductionByCanonical(completeLines);
     const itemsPayload: CompleteCookingPlanItemInput[] = [];
     for (const line of completeLines) {
+      if (line.sessionConfirmed) {
+        itemsPayload.push({
+          line_id: line.lineId,
+          canonical_item_id: line.canonical_item_id,
+          actual_used_qty: "0.000",
+          omitted: true,
+          session_confirmed: true,
+          confirmed_qty:
+            line.sessionConfirmedQty !== undefined
+              ? line.sessionConfirmedQty.toFixed(3)
+              : undefined,
+          confirmed_unit: line.sessionConfirmedUnit ?? line.base_unit,
+        });
+        continue;
+      }
       if (!line.omitted && !line.unitCompatible) {
         setCompleteError(
           `Unit mismatch for ${line.productName} (pantry in ${line.lotBaseUnit}, recipe in ${line.base_unit}). Omit this line or add stock in ${line.base_unit}.`,
@@ -1108,8 +1202,6 @@ export function RecipesScreen() {
         },
       );
       setCompletingPlan(null);
-      await invalidateHouseholdData(queryClient, activeHouseholdId);
-      await loadData(true);
       if (completeRes.meal_history_id) {
         setFeedbackModalMealId(completeRes.meal_history_id);
         setFeedbackModalTitle(completedTitle);
@@ -1118,6 +1210,9 @@ export function RecipesScreen() {
         setFeedbackComment("");
         setFeedbackWouldMakeAgain(null);
       }
+      // Refresh cached pantry & history in background after transaction has committed
+      void invalidateHouseholdData(queryClient, activeHouseholdId);
+      void loadData(true);
     } catch (err) {
       const message = err instanceof ApiClientError
         ? err.message
@@ -1688,7 +1783,30 @@ export function RecipesScreen() {
                     {!line.omitted
                       ? (
                         <>
-                          {!line.unitCompatible
+                          {line.sessionConfirmed
+                            ? (
+                              <View style={{ gap: 6, marginTop: 4 }}>
+                                <Text style={styles.ingAvailableText}>
+                                  Confirmed on-hand:{" "}
+                                  {formatQuantityWithUnit(
+                                    line.sessionConfirmedQty ?? line.planned_qty,
+                                    line.sessionConfirmedUnit ?? line.base_unit,
+                                  )}{" "}
+                                  (session-only — 0 deducted from pantry)
+                                </Text>
+                                {!line.unitCompatible
+                                  ? (
+                                    <Text style={styles.plannedHint}>
+                                      Existing pantry lot ({formatQuantityWithUnit(
+                                        line.availableQty,
+                                        line.lotBaseUnit,
+                                      )}) is kept untouched.
+                                    </Text>
+                                  )
+                                  : null}
+                              </View>
+                            )
+                            : !line.unitCompatible
                             ? (
                               <View style={{ gap: 6, marginTop: 4 }}>
                                 <Text style={styles.ingMissingText}>
@@ -1877,19 +1995,19 @@ export function RecipesScreen() {
                   completeLines,
                 );
                 const toDeduct = completeLines.filter((l) => {
-                  if (l.omitted || !l.unitCompatible) return false;
+                  if (l.omitted || l.sessionConfirmed || !l.unitCompatible) return false;
                   const d = (Number(l.actualUsedText || "0") || 0) +
                     (Number(l.wasteQtyText || "0") || 0);
                   const comb = summaryCombined[l.canonical_item_id] ?? 0;
                   return d > 0 && comb <= l.availableQty + 1e-6;
                 });
+                const sessionConfirmedList = completeLines.filter(
+                  (l) => !l.omitted && Boolean(l.sessionConfirmed),
+                );
                 const omittedList = completeLines.filter((l) => l.omitted);
-                const unresolvedList = completeLines.filter((l) => {
-                  if (l.omitted) return false;
-                  if (!l.unitCompatible) return true;
-                  const comb = summaryCombined[l.canonical_item_id] ?? 0;
-                  return comb > l.availableQty + 1e-6;
-                });
+                const unresolvedList = completeLines.filter((l) =>
+                  isCompletePlanLineUnresolved(l, summaryCombined)
+                );
 
                 return (
                   <View style={styles.completeLineCard}>
@@ -1937,6 +2055,29 @@ export function RecipesScreen() {
                         })
                       )}
 
+                    {sessionConfirmedList.length > 0
+                      ? (
+                        <View style={{ marginTop: spacing.xs }}>
+                          <Text style={styles.ingAvailableHeader}>
+                            Confirmed on-hand (session-only) ({sessionConfirmedList.length})
+                          </Text>
+                          {sessionConfirmedList.map((line) => (
+                            <Text
+                              key={`summary-session-${line.lineId}`}
+                              style={styles.plannedHint}
+                            >
+                              • {line.productName}: Confirmed{" "}
+                              {formatQuantityWithUnit(
+                                line.sessionConfirmedQty ?? line.planned_qty,
+                                line.sessionConfirmedUnit ?? line.base_unit,
+                              )}{" "}
+                              (0 deducted from pantry)
+                            </Text>
+                          ))}
+                        </View>
+                      )
+                      : null}
+
                     {omittedList.length > 0
                       ? (
                         <View style={{ marginTop: spacing.xs }}>
@@ -1948,7 +2089,7 @@ export function RecipesScreen() {
                               key={`summary-omit-${line.lineId}`}
                               style={styles.plannedHint}
                             >
-                              • {line.productName}: Omitted (0 deducted)
+                              • {line.productName}: Omitted (will not be deducted from pantry)
                             </Text>
                           ))}
                         </View>
@@ -1998,12 +2139,8 @@ export function RecipesScreen() {
               const footerCombined = computeCombinedDeductionByCanonical(
                 completeLines,
               );
-              const unresolvedCount = completeLines.filter(
-                (l) =>
-                  !l.omitted &&
-                  (!l.unitCompatible ||
-                    (footerCombined[l.canonical_item_id] ?? 0) >
-                      l.availableQty + 1e-6),
+              const unresolvedCount = completeLines.filter((l) =>
+                isCompletePlanLineUnresolved(l, footerCombined)
               ).length;
               const blocked = isCompleting || unresolvedCount > 0;
               return (
@@ -2535,14 +2672,51 @@ export function RecipesScreen() {
                     <Text style={styles.ingAvailableHeader}>
                       Cooking Instructions:
                     </Text>
-                    {selectedRecipeDetail.instructions.map((step, idx) => (
-                      <Text
-                        key={idx}
-                        style={[styles.planMeta, { marginTop: 4 }]}
-                      >
-                        {idx + 1}. {step}
-                      </Text>
-                    ))}
+                    {(selectedRecipeDetail.structured_steps?.length ?? 0) > 0
+                      ? selectedRecipeDetail.structured_steps!.map((st, idx) => {
+                        const metaParts = [
+                          st.duration_minutes ? `~${st.duration_minutes}m` : null,
+                          st.heat_level ? `Heat: ${st.heat_level}` : null,
+                          st.equipment?.length ? `Equipment: ${st.equipment.join(", ")}` : null,
+                        ].filter(Boolean);
+                        const qtyEntries = Object.entries(st.ingredient_quantities ?? {});
+                        return (
+                          <View key={idx} style={{ marginTop: 8 }}>
+                            <Text style={styles.planTitle}>
+                              {st.step_number || idx + 1}. {st.title}
+                            </Text>
+                            {metaParts.length > 0 ? (
+                              <Text style={styles.planMeta}>{metaParts.join(" · ")}</Text>
+                            ) : null}
+                            <Text style={[styles.planMeta, { marginTop: 2 }]}>
+                              {st.instruction}
+                            </Text>
+                            {qtyEntries.length > 0 ? (
+                              <Text style={styles.planMeta}>
+                                Quantities: {qtyEntries.map(([k, v]) => `${k} (${v})`).join(", ")}
+                              </Text>
+                            ) : null}
+                            {st.completion_cue ? (
+                              <Text style={styles.planMeta}>
+                                Look for: {st.completion_cue}
+                              </Text>
+                            ) : null}
+                            {st.caution ? (
+                              <Text style={styles.planMeta}>
+                                Caution: {st.caution}
+                              </Text>
+                            ) : null}
+                          </View>
+                        );
+                      })
+                      : selectedRecipeDetail.instructions.map((step, idx) => (
+                        <Text
+                          key={idx}
+                          style={[styles.planMeta, { marginTop: 4 }]}
+                        >
+                          {idx + 1}. {step}
+                        </Text>
+                      ))}
                   </View>
 
                   {selectedRecipeDetail.substitutions.length > 0
@@ -2558,6 +2732,32 @@ export function RecipesScreen() {
                     )
                     : null}
 
+                  {(selectedRecipeDetail.equipment_required?.length ?? 0) > 0
+                    ? (
+                      <View style={{ marginTop: spacing.md }}>
+                        <Text style={styles.ingAvailableHeader}>
+                          Equipment Needed:
+                        </Text>
+                        <Text style={styles.planMeta}>
+                          {selectedRecipeDetail.equipment_required!.join(" · ")}
+                        </Text>
+                      </View>
+                    )
+                    : null}
+
+                  {(selectedRecipeDetail.preparation_steps?.length ?? 0) > 0
+                    ? (
+                      <View style={{ marginTop: spacing.md }}>
+                        <Text style={styles.ingAvailableHeader}>
+                          Before You Start (Prep):
+                        </Text>
+                        {selectedRecipeDetail.preparation_steps!.map((prep, idx) => (
+                          <Text key={idx} style={styles.planMeta}>• {prep}</Text>
+                        ))}
+                      </View>
+                    )
+                    : null}
+
                   {selectedRecipeDetail.cooking_tips.length > 0
                     ? (
                       <View style={{ marginTop: spacing.md }}>
@@ -2567,6 +2767,32 @@ export function RecipesScreen() {
                         {selectedRecipeDetail.cooking_tips.map((tip, idx) => (
                           <Text key={idx} style={styles.planMeta}>• {tip}</Text>
                         ))}
+                      </View>
+                    )
+                    : null}
+
+                  {(selectedRecipeDetail.troubleshooting_tips?.length ?? 0) > 0
+                    ? (
+                      <View style={{ marginTop: spacing.md }}>
+                        <Text style={styles.ingAvailableHeader}>
+                          Troubleshooting:
+                        </Text>
+                        {selectedRecipeDetail.troubleshooting_tips!.map((tip, idx) => (
+                          <Text key={idx} style={styles.planMeta}>• {tip}</Text>
+                        ))}
+                      </View>
+                    )
+                    : null}
+
+                  {selectedRecipeDetail.serving_result
+                    ? (
+                      <View style={{ marginTop: spacing.md }}>
+                        <Text style={styles.ingAvailableHeader}>
+                          Expected Result:
+                        </Text>
+                        <Text style={styles.planMeta}>
+                          {selectedRecipeDetail.serving_result}
+                        </Text>
                       </View>
                     )
                     : null}
@@ -2725,7 +2951,7 @@ export function RecipesScreen() {
                 reviewAll: false,
                 showIngredients: false,
               };
-              const stepDisp = resolveCookingStep(detail, prog.stepIndex);
+              const stepDisp = resolveCookingStep(detail, prog.stepIndex, prog.servings);
               const totalSteps = stepDisp.totalSteps;
               const safeStepIdx = stepDisp.stepNumber - 1;
               const progressPct = computeCookingProgress(safeStepIdx, totalSteps);
@@ -3036,15 +3262,24 @@ export function RecipesScreen() {
                                 Ingredients for this step
                               </Text>
                               <View style={styles.stepMetaChipsRow}>
-                                {stepDisp.ingredientsUsed.map((ingName, idx) => (
-                                  <View key={idx} style={styles.stepMetaChip}>
-                                    <Text style={styles.stepMetaChipText}>
-                                      {ingName}
-                                    </Text>
-                                  </View>
-                                ))}
+                                {stepDisp.ingredientsUsed.map((ingName, idx) => {
+                                  const qtyText = stepDisp.ingredientQuantities[ingName];
+                                  return (
+                                    <View key={idx} style={styles.stepMetaChip}>
+                                      <Text style={styles.stepMetaChipText}>
+                                        {qtyText ? `${ingName} (${qtyText})` : ingName}
+                                      </Text>
+                                    </View>
+                                  );
+                                })}
                               </View>
                             </View>
+                          ) : null}
+
+                          {stepDisp.equipment.length > 0 ? (
+                            <Text style={[styles.plannedHint, { marginTop: spacing.xs }]}>
+                              Equipment: {stepDisp.equipment.join(", ")}
+                            </Text>
                           ) : null}
 
                           {stepDisp.completionCue ? (
@@ -3053,6 +3288,20 @@ export function RecipesScreen() {
                                 Look for: {stepDisp.completionCue}
                               </Text>
                             </View>
+                          ) : null}
+
+                          {stepDisp.caution ? (
+                            <View style={[styles.completionCueBox, { marginTop: spacing.xs }]}>
+                              <Text style={styles.completionCueText}>
+                                Caution: {stepDisp.caution}
+                              </Text>
+                            </View>
+                          ) : null}
+
+                          {stepDisp.nextAction ? (
+                            <Text style={[styles.plannedHint, { marginTop: spacing.xs }]}>
+                              Next: {stepDisp.nextAction}
+                            </Text>
                           ) : null}
 
                           {/* Optional Step-Specific Cooking Timer */}
@@ -3320,6 +3569,94 @@ export function RecipesScreen() {
               })}
             </View>
 
+            {/* 10-Recipe Personalisation Prompt & Mode Selector */}
+            {showPersonalisationPrompt
+              ? (
+                <View style={styles.completeLineCard}>
+                  <Text style={styles.completeLineName}>
+                    You've tried 10 recipes! What would you like AI Chef to suggest next?
+                  </Text>
+                  <View style={[styles.constraintsRow, { marginTop: spacing.xs }]}>
+                    {(
+                      [
+                        { id: "enjoyed", label: "Something I've enjoyed" },
+                        { id: "new", label: "Something new" },
+                        {
+                          id: "balanced",
+                          label: "No preference / Balanced recommendations",
+                        },
+                      ] as const
+                    ).map((opt) => (
+                      <Pressable
+                        key={opt.id}
+                        disabled={isSavingPrefMode}
+                        onPress={() => void handleUpdateRecommendationMode(opt.id)}
+                        style={[
+                          styles.constraintChip,
+                          recommendationMode === opt.id &&
+                            styles.constraintChipSelected,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.constraintChipText,
+                            recommendationMode === opt.id &&
+                              styles.constraintChipTextSelected,
+                          ]}
+                        >
+                          {opt.label}
+                        </Text>
+                      </Pressable>
+                    ))}
+                    <Pressable
+                      disabled={isSavingPrefMode}
+                      onPress={() => void handleUpdateRecommendationMode(null, true)}
+                      style={styles.constraintChip}
+                    >
+                      <Text style={styles.constraintChipText}>Dismiss</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              )
+              : (
+                <View style={{ marginBottom: spacing.sm }}>
+                  <Text style={styles.ingAvailableHeader}>
+                    Suggestion Style:
+                  </Text>
+                  <View style={styles.constraintsRow}>
+                    {(
+                      [
+                        { id: "enjoyed", label: "Something I've enjoyed" },
+                        { id: "new", label: "Something new" },
+                        { id: "balanced", label: "Balanced" },
+                      ] as const
+                    ).map((opt) => {
+                      const selected = recommendationMode === opt.id;
+                      return (
+                        <Pressable
+                          key={opt.id}
+                          disabled={isSavingPrefMode}
+                          onPress={() => void handleUpdateRecommendationMode(opt.id)}
+                          style={[
+                            styles.constraintChip,
+                            selected && styles.constraintChipSelected,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.constraintChipText,
+                              selected && styles.constraintChipTextSelected,
+                            ]}
+                          >
+                            {opt.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+
             {/* Cooking Time */}
             <Text
               style={[styles.ingAvailableHeader, { marginTop: spacing.sm }]}
@@ -3411,8 +3748,63 @@ export function RecipesScreen() {
                 )}
             </Pressable>
 
+            {isProviderOffline
+              ? (
+                <View
+                  style={[
+                    styles.providerBanner,
+                    styles.providerBannerOffline,
+                    { marginTop: spacing.sm },
+                  ]}
+                >
+                  <Ionicons
+                    name="alert-circle-outline"
+                    size={16}
+                    color={colors.warning}
+                  />
+                  <Text
+                    style={[
+                      styles.providerBannerText,
+                      styles.providerTextOffline,
+                    ]}
+                  >
+                    {latestProviderMessage ??
+                      `Provider status: ${latestProviderStatus}`}
+                  </Text>
+                </View>
+              )
+              : null}
+
+            {chatError
+              ? (
+                <View
+                  style={[styles.errorBanner, { marginTop: spacing.sm }]}
+                  accessibilityRole="alert"
+                >
+                  <Ionicons
+                    name="alert-circle-outline"
+                    size={18}
+                    color={colors.error}
+                  />
+                  <Text style={styles.errorBannerText}>{chatError}</Text>
+                </View>
+              )
+              : null}
+
             {/* Conversation Turns */}
             <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
+              {isSendingChat
+                ? (
+                  <View style={[styles.chatBubble, styles.assistantBubble]}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <ActivityIndicator size="small" color={colors.primary} />
+                      <Text style={styles.chatBubbleText}>
+                        AI Chef is preparing suggestions...
+                      </Text>
+                    </View>
+                  </View>
+                )
+                : null}
               {chatTurns.map((turn) => (
                 <View
                   key={turn.id}
@@ -3592,7 +3984,7 @@ export function RecipesScreen() {
           >
             <Text style={styles.modalSubtitle}>
               {resolveTarget?.mode === "have"
-                ? "Add the actual quantity you currently have on hand via an auditable inventory adjustment."
+                ? `What is the approximate total amount of ${resolveTarget.name} you currently have on hand? (Recipe needs ${formatQuantityWithUnit(resolveTarget.requiredQty, resolveTarget.unit)})`
                 : "Record this purchase to create an eligible pantry lot and update purchase accounting."}
             </Text>
 
@@ -3635,7 +4027,10 @@ export function RecipesScreen() {
               <View style={styles.flex1}>
                 <Text style={styles.fieldLabel}>Unit</Text>
                 <View style={styles.constraintsRow}>
-                  {(["g", "ml", "pcs"] as const).map((u) => (
+                  {(resolveTarget?.mode === "have"
+                    ? getCompatibleUnitsForUnit((resolveTarget.unit as BaseUnit) || resolveUnit)
+                    : (["g", "kg", "ml", "l", "pcs", "dozen"] as const)
+                  ).map((u) => (
                     <Pressable
                       key={u}
                       onPress={() => setResolveUnit(u)}
@@ -3658,6 +4053,132 @@ export function RecipesScreen() {
                 </View>
               </View>
             </View>
+
+            {resolveTarget?.mode === "have"
+              ? (() => {
+                const parsedQty = Number(resolveQtyText);
+                const targetUnit = (
+                  ["g", "kg", "ml", "l", "pcs", "dozen"].includes(resolveTarget.unit)
+                    ? resolveTarget.unit
+                    : resolveUnit
+                ) as BaseUnit;
+                const preview = Number.isFinite(parsedQty) && parsedQty > 0
+                  ? evaluateReportedAvailability({
+                    reportedQty: parsedQty,
+                    reportedUnit: resolveUnit,
+                    requiredQty: resolveTarget.requiredQty,
+                    requiredUnit: targetUnit,
+                  })
+                  : null;
+                return (
+                  <View style={{ marginTop: spacing.sm, gap: spacing.xs }}>
+                    {preview && preview.ok
+                      ? (
+                        <Text
+                          style={preview.status === "sufficient"
+                            ? styles.ingAvailableText
+                            : styles.ingMissingText}
+                        >
+                          {preview.status === "sufficient"
+                            ? `Sufficient for this recipe (~${formatQuantityWithUnit(preview.remainingAfterRecipe, targetUnit)} left after cooking).`
+                            : `Insufficient for this recipe (still short by ${formatQuantityWithUnit(preview.shortageQty, targetUnit)}).`}
+                        </Text>
+                      )
+                      : preview && !preview.ok
+                      ? <Text style={styles.ingMissingText}>{preview.error}</Text>
+                      : null}
+
+                    <Text style={styles.fieldLabel}>Note (optional)</Text>
+                    <TextInput
+                      value={resolveNoteText}
+                      onChangeText={setResolveNoteText}
+                      placeholder="e.g. Half pack open in fridge"
+                      placeholderTextColor={colors.textMuted}
+                      style={styles.input}
+                    />
+
+                    <Pressable
+                      onPress={() => setResolvePersistToPantry((p) => !p)}
+                      style={[
+                        styles.constraintChip,
+                        resolvePersistToPantry && styles.constraintChipSelected,
+                        { alignSelf: "flex-start", marginTop: spacing.xs },
+                      ]}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: resolvePersistToPantry }}
+                    >
+                      <Text
+                        style={[
+                          styles.constraintChipText,
+                          resolvePersistToPantry && styles.constraintChipTextSelected,
+                        ]}
+                      >
+                        {resolvePersistToPantry
+                          ? "Also save to persistent Pantry: ON"
+                          : "Session-only by default (tap to also save to Pantry)"}
+                      </Text>
+                    </Pressable>
+
+                    <View style={[styles.constraintsRow, { marginTop: spacing.xs }]}>
+                      <Pressable
+                        onPress={() => {
+                          if (!resolveTarget) return;
+                          const rec = buildSessionAvailabilityRecord({
+                            key: resolveTarget.key,
+                            name: resolveNameText.trim() || resolveTarget.name,
+                            canonical_item_id: resolveTarget.canonical_item_id,
+                            reportedQty: 0,
+                            reportedUnit: resolveUnit,
+                            requiredQty: resolveTarget.requiredQty,
+                            requiredUnit: targetUnit,
+                            persistedToPantry: false,
+                            note: resolveNoteText,
+                            mode: "unavailable",
+                          });
+                          setSessionReportedAvailability((prev) => ({
+                            ...prev,
+                            [resolveTarget.key]: rec,
+                          }));
+                          setResolveTarget(null);
+                        }}
+                        style={styles.constraintChip}
+                      >
+                        <Text style={styles.constraintChipText}>
+                          Mark Unavailable
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => {
+                          if (!resolveTarget) return;
+                          const rec = buildSessionAvailabilityRecord({
+                            key: resolveTarget.key,
+                            name: resolveNameText.trim() || resolveTarget.name,
+                            canonical_item_id: resolveTarget.canonical_item_id,
+                            reportedQty: 0,
+                            reportedUnit: resolveUnit,
+                            requiredQty: resolveTarget.requiredQty,
+                            requiredUnit: targetUnit,
+                            persistedToPantry: false,
+                            note: resolveNoteText,
+                            mode: "skipped",
+                          });
+                          setSessionReportedAvailability((prev) => ({
+                            ...prev,
+                            [resolveTarget.key]: rec,
+                          }));
+                          setResolveTarget(null);
+                        }}
+                        style={styles.constraintChip}
+                      >
+                        <Text style={styles.constraintChipText}>
+                          Skip for Session
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                );
+              })()
+              : null}
 
             {resolveTarget?.mode === "bought"
               ? (
@@ -3702,7 +4223,9 @@ export function RecipesScreen() {
                 : (
                   <Text style={styles.confirmCompleteBtnText}>
                     {resolveTarget?.mode === "have"
-                      ? "Confirm & Add to Pantry"
+                      ? resolvePersistToPantry
+                        ? "Confirm & Save to Pantry"
+                        : "Confirm for This Session"
                       : "Confirm Purchase & Add to Pantry"}
                   </Text>
                 )}

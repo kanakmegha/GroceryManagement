@@ -509,6 +509,12 @@ export function PurchasesScreen() {
 
   const handleCameraCapture = useCallback(async () => {
     setActionError(null);
+    if (Platform.OS === "web") {
+      setActionError(
+        "Live camera capture is only available on mobile devices. Use Upload Receipt (Gallery / PDF) instead.",
+      );
+      return;
+    }
     const outcome = await resolveCameraPermissionForCapture({
       getCameraPermissionsAsync: ImagePicker.getCameraPermissionsAsync,
       requestCameraPermissionsAsync: ImagePicker.requestCameraPermissionsAsync,
@@ -923,7 +929,11 @@ export function PurchasesScreen() {
         const message = err instanceof ApiClientError
           ? err.message
           : "Unable to discard draft.";
-        Alert.alert("Discard Failed", message);
+        if (Platform.OS === "web") {
+          setActionError(message);
+        } else {
+          Alert.alert("Discard Failed", message);
+        }
       }
     },
     [apiClient, editingDraftId, loadData],
