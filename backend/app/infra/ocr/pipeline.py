@@ -11,9 +11,12 @@ Stages:
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from app.infra.ocr.preprocessing import (
     MAX_RECEIPT_BYTES,
@@ -154,12 +157,26 @@ def _run_local_ocr_on_images_sync(
     image_bytes_list: list[bytes],
     *,
     is_pdf_pages: bool = False,
-) -> tuple[list[OcrTokenBox], str, str, ReceiptQualityReport | None, list[str]]:
+) -> tuple[
+    list[OcrTokenBox],
+    str,
+    str,
+    ReceiptQualityReport | None,
+    list[str],
+    bytes | None,
+    dict[str, int],
+]:
     """Run Stage B preprocessing + Stage C local OCR across 1..N images/pages."""
     warnings: list[str] = []
     all_boxes: list[OcrTokenBox] = []
     raw_texts: list[str] = []
     first_quality: ReceiptQualityReport | None = None
+    first_enhanced_png: bytes | None = None
+    timings: dict[str, int] = {
+        "preprocess_ms": 0,
+        "ocr_pass1_ms": 0,
+        "ocr_pass2_ms": 0,
+    }
     provider = _select_local_ocr_provider()
     adapter_name = provider.name if provider else "ocr_provider_unavailable"
 
@@ -170,16 +187,20 @@ def _run_local_ocr_on_images_sync(
         )
 
     for idx, img_bytes in enumerate(image_bytes_list):
+        t_prep = time.perf_counter()
         try:
             prep = preprocess_receipt_image(img_bytes)
         except Exception as exc:
+            timings["preprocess_ms"] += int((time.perf_counter() - t_prep) * 1000)
             warnings.append(
                 f"Image preprocessing failed ({type(exc).__name__}); manual review needed."
             )
             continue
+        timings["preprocess_ms"] += int((time.perf_counter() - t_prep) * 1000)
 
         if idx == 0:
             first_quality = prep.quality_report
+            first_enhanced_png = prep.enhanced_png_bytes
         warnings.extend(prep.warnings)
 
         if not prep.quality_report.is_readable:
@@ -188,10 +209,14 @@ def _run_local_ocr_on_images_sync(
         if provider is None:
             continue
 
+        t_p1 = time.perf_counter()
         ocr_out: RawOcrOutput = provider.recognize_image(prep.enhanced_png_bytes, page=idx + 1)
+        timings["ocr_pass1_ms"] += int((time.perf_counter() - t_p1) * 1000)
         # If perspective-warped/enhanced image yielded nothing, retry once on original PNG
         if not ocr_out.boxes and prep.enhanced_png_bytes != prep.original_png_bytes:
+            t_p2 = time.perf_counter()
             ocr_out = provider.recognize_image(prep.original_png_bytes, page=idx + 1)
+            timings["ocr_pass2_ms"] += int((time.perf_counter() - t_p2) * 1000)
 
         warnings.extend(ocr_out.warnings)
         all_boxes.extend(ocr_out.boxes)
@@ -211,6 +236,8 @@ def _run_local_ocr_on_images_sync(
         adapter_name,
         first_quality,
         list(dict.fromkeys(warnings)),
+        first_enhanced_png,
+        timings,
     )
 
 
@@ -284,7 +311,15 @@ async def extract_receipt(
             return receipt
 
         if pdf_res.page_images:
-            boxes, raw_text, adapter_name, quality, ocr_warnings = await asyncio.to_thread(
+            (
+                boxes,
+                raw_text,
+                adapter_name,
+                quality,
+                ocr_warnings,
+                _enhanced_png,
+                timings,
+            ) = await asyncio.to_thread(
                 _run_local_ocr_on_images_sync, pdf_res.page_images, is_pdf_pages=True
             )
             all_warnings = list(dict.fromkeys(pdf_res.warnings + ocr_warnings))
@@ -301,6 +336,16 @@ async def extract_receipt(
             receipt.quality_report = quality
             receipt = validate_extracted_receipt(receipt)
             receipt.latency_ms = int((time.perf_counter() - started) * 1000)
+            logger.info(
+                "receipt_ocr_timings bytes=%d source_type=pdf_scanned adapter=%s "
+                "preprocess_ms=%d ocr_pass1_ms=%d ocr_pass2_ms=%d vlm_ms=0 total_ms=%d",
+                len(data),
+                adapter_name,
+                timings["preprocess_ms"],
+                timings["ocr_pass1_ms"],
+                timings["ocr_pass2_ms"],
+                receipt.latency_ms,
+            )
             return receipt
 
         receipt = ExtractedReceipt(
@@ -318,7 +363,15 @@ async def extract_receipt(
 
     # 3. Camera / Gallery images
     if ct.startswith("image/") or ext in {".png", ".jpg", ".jpeg", ".webp", ".heic", ".bmp"}:
-        boxes, raw_text, adapter_name, quality, ocr_warnings = await asyncio.to_thread(
+        (
+            boxes,
+            raw_text,
+            adapter_name,
+            quality,
+            ocr_warnings,
+            enhanced_png_bytes,
+            timings,
+        ) = await asyncio.to_thread(
             _run_local_ocr_on_images_sync, [data], is_pdf_pages=False
         )
         grid_xs = await asyncio.to_thread(detect_table_vertical_lines, data)
@@ -337,14 +390,22 @@ async def extract_receipt(
         receipt = validate_extracted_receipt(receipt)
 
         # Selective VLM escalation ONLY when enabled and local result is unreadable/unreconciled
+        vlm_ms = 0
         vlm = HuggingFaceVlmProvider()
         if (
             vlm.is_available()
             and (quality is None or quality.is_readable)
             and (not receipt.lines or not receipt.math_reconciled)
         ):
-            prep = await asyncio.to_thread(preprocess_receipt_image, data)
-            vlm_json = await vlm.extract_structured(prep.enhanced_png_bytes)
+            vlm_input_bytes = enhanced_png_bytes
+            if vlm_input_bytes is None:
+                t_prep_fallback = time.perf_counter()
+                prep = await asyncio.to_thread(preprocess_receipt_image, data)
+                timings["preprocess_ms"] += int((time.perf_counter() - t_prep_fallback) * 1000)
+                vlm_input_bytes = prep.enhanced_png_bytes
+            t_vlm = time.perf_counter()
+            vlm_json = await vlm.extract_structured(vlm_input_bytes)
+            vlm_ms = int((time.perf_counter() - t_vlm) * 1000)
             if vlm_json:
                 vlm_receipt = _vlm_dict_to_receipt(
                     vlm_json,
@@ -360,6 +421,17 @@ async def extract_receipt(
                     receipt = vlm_receipt
 
         receipt.latency_ms = int((time.perf_counter() - started) * 1000)
+        logger.info(
+            "receipt_ocr_timings bytes=%d source_type=image adapter=%s "
+            "preprocess_ms=%d ocr_pass1_ms=%d ocr_pass2_ms=%d vlm_ms=%d total_ms=%d",
+            len(data),
+            receipt.adapter_used,
+            timings["preprocess_ms"],
+            timings["ocr_pass1_ms"],
+            timings["ocr_pass2_ms"],
+            vlm_ms,
+            receipt.latency_ms,
+        )
         return receipt
 
     return ExtractedReceipt(

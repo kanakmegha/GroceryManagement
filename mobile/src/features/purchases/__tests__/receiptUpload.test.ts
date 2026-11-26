@@ -1,7 +1,12 @@
 import { createApiClient } from '../../../shared/api/client';
 import {
   buildReceiptFormData,
+  compressReceiptImageIfNeeded,
+  computeScaledDimensions,
+  MAX_IMAGE_LONG_EDGE_PX,
+  RECEIPT_OCR_TIMEOUT_MS,
   resolveReceiptMimeType,
+  SMALL_JPEG_SKIP_BYTES,
   validateReceiptAsset,
 } from '../receiptUpload';
 
@@ -100,5 +105,96 @@ describe('receiptUpload and multipart API client handling', () => {
     expect(headers['X-Household-Id']).toBe('hh_123');
     expect(headers['Content-Type']).toBeUndefined();
     expect(init.body).toBe(fd);
+  });
+
+  it('scales large images to max long edge 1600px while preserving aspect ratio', () => {
+    expect(computeScaledDimensions(4000, 3000, MAX_IMAGE_LONG_EDGE_PX)).toEqual({
+      width: 1600,
+      height: 1200,
+      resized: true,
+    });
+    expect(computeScaledDimensions(1200, 900, MAX_IMAGE_LONG_EDGE_PX)).toEqual({
+      width: 1200,
+      height: 900,
+      resized: false,
+    });
+  });
+
+  it('compresses large JPEG and PNG uploads while skipping small JPEGs and PDFs', async () => {
+    const largeJpeg = new Uint8Array(900 * 1024); // 900 KB
+    const smallJpeg = new Uint8Array(Math.floor(SMALL_JPEG_SKIP_BYTES / 2)); // 150 KB
+    const pngBytes = new Uint8Array(600 * 1024); // 600 KB
+    const pdfBytes = new Uint8Array(500 * 1024); // 500 KB
+    const compressedBytes = new Uint8Array(180 * 1024); // 180 KB
+
+    const mockCompressor = jest.fn(async ({ name }: { name: string }) => ({
+      bytes: compressedBytes,
+      mimeType: 'image/jpeg',
+      name: name.replace(/\.[^.]+$/, '.jpg'),
+      compressed: true,
+    }));
+
+    // Large JPEG -> compressed
+    const resLarge = await compressReceiptImageIfNeeded(
+      largeJpeg,
+      'image/jpeg',
+      'photo.jpeg',
+      mockCompressor
+    );
+    expect(resLarge.compressed).toBe(true);
+    expect(resLarge.bytes.byteLength).toBe(180 * 1024);
+    expect(resLarge.mimeType).toBe('image/jpeg');
+
+    // Small JPEG -> skipped without calling compressor
+    mockCompressor.mockClear();
+    const resSmall = await compressReceiptImageIfNeeded(
+      smallJpeg,
+      'image/jpeg',
+      'small.jpg',
+      mockCompressor
+    );
+    expect(resSmall.compressed).toBe(false);
+    expect(resSmall.bytes.byteLength).toBe(smallJpeg.byteLength);
+    expect(mockCompressor).not.toHaveBeenCalled();
+
+    // PNG -> compressed to JPEG with .jpg filename
+    const resPng = await compressReceiptImageIfNeeded(
+      pngBytes,
+      'image/png',
+      'scan.png',
+      mockCompressor
+    );
+    expect(resPng.compressed).toBe(true);
+    expect(resPng.mimeType).toBe('image/jpeg');
+    expect(resPng.name).toBe('scan.jpg');
+
+    // PDF -> untouched
+    mockCompressor.mockClear();
+    const resPdf = await compressReceiptImageIfNeeded(
+      pdfBytes,
+      'application/pdf',
+      'invoice.pdf',
+      mockCompressor
+    );
+    expect(resPdf.compressed).toBe(false);
+    expect(resPdf.bytes).toBe(pdfBytes);
+    expect(resPdf.mimeType).toBe('application/pdf');
+    expect(mockCompressor).not.toHaveBeenCalled();
+  });
+
+  it('falls back to original bytes when compression throws', async () => {
+    const raw = new Uint8Array(500 * 1024);
+    const failingCompressor = jest.fn(async () => {
+      throw new Error('Canvas unavailable');
+    });
+    const res = await compressReceiptImageIfNeeded(raw, 'image/jpeg', 'bill.jpg', failingCompressor);
+    expect(res.compressed).toBe(false);
+    expect(res.bytes).toBe(raw);
+    expect(res.mimeType).toBe('image/jpeg');
+    expect(res.name).toBe('bill.jpg');
+  });
+
+  it('exposes a 60s receipt-specific OCR timeout without altering global default', () => {
+    expect(RECEIPT_OCR_TIMEOUT_MS).toBe(60_000);
   });
 });

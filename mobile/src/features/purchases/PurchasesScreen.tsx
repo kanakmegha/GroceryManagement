@@ -78,6 +78,7 @@ import { colors, layout, radii, spacing } from "../../shared/theme/tokens";
 import {
   buildMultiReceiptFormData,
   buildReceiptFormData,
+  RECEIPT_OCR_TIMEOUT_MS,
   type ReceiptAssetInput,
 } from "./receiptUpload";
 import {
@@ -481,6 +482,7 @@ export function PurchasesScreen() {
         const createdDraft = await apiClient.post<PurchaseDraft>(
           "/api/v1/purchases/ocr",
           formData,
+          { timeoutMs: RECEIPT_OCR_TIMEOUT_MS },
         );
         if (uploadSeqRef.current !== seq) {
           return;
