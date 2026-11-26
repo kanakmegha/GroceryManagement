@@ -275,6 +275,9 @@ async def test_heartbeats_keep_long_running_generation_alive_and_prevent_reclaim
         reclaim_attempted = False
         reclaim_result: DailyMealPlan | None = None
 
+        now_utc = datetime.now(UTC)
+        today_local = (now_utc + timedelta(hours=5, minutes=30)).date()
+
         class _SlowGenerator:
             async def generate(self, context: dict[str, Any]) -> DailyGenerationOutcome:
                 nonlocal reclaim_attempted, reclaim_result
@@ -285,7 +288,7 @@ async def test_heartbeats_keep_long_running_generation_alive_and_prevent_reclaim
                     reclaim_result = await claim_daily_plan_slot(
                         check_db,
                         household_id=household_id,
-                        local_date=date(2026, 11, 25),
+                        local_date=today_local,
                         timezone_str="Asia/Kolkata",
                         lease_seconds=1,
                     )
@@ -297,7 +300,6 @@ async def test_heartbeats_keep_long_running_generation_alive_and_prevent_reclaim
                 )
 
         # Use real wall-clock UTC so heartbeat renewal advances lease_expires_at beyond now
-        now_utc = datetime.now(UTC)
         async with session_maker() as db:
             result = await run_daily_plan_for_household(
                 db,
