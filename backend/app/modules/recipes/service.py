@@ -361,6 +361,39 @@ def invalidate_recipe_recommendations_cache(household_id: UUID | str) -> None:
         _RECOMMENDATIONS_CACHE.pop(k, None)
 
 
+async def is_household_preferences_completed(
+    db: AsyncSession, household_id: UUID
+) -> bool:
+    """Return True if the household explicitly saved preferences or already has a ready daily plan.
+
+    Preserves existing households with previously generated daily plans without creating
+    synthetic preference rows, while gating brand-new households until explicit PUT save.
+    """
+    from app.modules.discovery.daily_models import DailyMealPlan
+
+    completed_at = (
+        await db.execute(
+            select(HouseholdRecipePreference.preferences_completed_at).where(
+                HouseholdRecipePreference.household_id == household_id
+            )
+        )
+    ).scalar_one_or_none()
+    if completed_at is not None:
+        return True
+
+    has_ready_plan = (
+        await db.execute(
+            select(DailyMealPlan.id)
+            .where(
+                DailyMealPlan.household_id == household_id,
+                DailyMealPlan.status == "ready",
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    return has_ready_plan is not None
+
+
 async def get_household_recipe_preferences(
     db: AsyncSession, household_id: UUID
 ) -> HouseholdRecipePreferencesOut:
@@ -371,12 +404,15 @@ async def get_household_recipe_preferences(
 
     row = await db.get(HouseholdRecipePreference, household_id)
     distinct_count = await count_distinct_completed_recipes(db, household_id)
+    onboarding_completed = await is_household_preferences_completed(db, household_id)
     if row is None:
         return HouseholdRecipePreferencesOut(
             household_id=household_id,
             distinct_completed_recipes=distinct_count,
             should_show_personalisation_prompt=distinct_count >= PERSONALISATION_RECIPE_THRESHOLD,
             personalisation_prompt_dismissed=False,
+            onboarding_completed=onboarding_completed,
+            preferences_completed_at=None,
         )
     dismissed = row.personalisation_prompt_dismissed_at is not None
     mode = (
@@ -399,6 +435,8 @@ async def get_household_recipe_preferences(
             distinct_count >= PERSONALISATION_RECIPE_THRESHOLD and not dismissed
         ),
         personalisation_prompt_dismissed=dismissed,
+        onboarding_completed=onboarding_completed,
+        preferences_completed_at=row.preferences_completed_at,
     )
 
 
@@ -418,6 +456,8 @@ async def upsert_household_recipe_preferences(
     row.preferred_cuisines = list(payload.preferred_cuisines)
     row.preferred_meal_types = list(payload.preferred_meal_types)
     row.max_prep_minutes = payload.max_prep_minutes
+    if row.preferences_completed_at is None:
+        row.preferences_completed_at = datetime.now(UTC)
     if payload.recommendation_mode is not None:
         row.recommendation_mode = payload.recommendation_mode
         if row.personalisation_prompt_dismissed_at is None:

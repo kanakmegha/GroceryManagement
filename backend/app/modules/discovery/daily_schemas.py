@@ -52,6 +52,7 @@ class DailyMealPlanResponse(BaseModel):
     manual_regeneration_count: int = 0
     manual_regeneration_limit: int = 1
     is_stale_fallback: bool = False
+    onboarding_required: bool = False
     generated_at: datetime | None = None
     weather_summary: str | None = None
     provider_metadata: dict[str, Any] = Field(default_factory=dict)

@@ -27,6 +27,7 @@ from app.modules.discovery.daily_scheduler import (
     run_daily_plan_for_household,
     run_scheduler_tick,
 )
+from app.modules.recipes.models import HouseholdRecipePreference
 
 
 def _build_dummy_slots(tag: str) -> list[GeneratedDailySlot]:
@@ -65,6 +66,15 @@ async def _setup_db(tmp_path: Path):
         await db.flush()
         h = Household(name="Lease Kitchen", currency_code="INR", created_by=u.id)
         db.add(h)
+        await db.flush()
+        db.add(
+            HouseholdRecipePreference(
+                household_id=h.id,
+                timezone="Asia/Kolkata",
+                diet_type="vegetarian",
+                preferences_completed_at=datetime.now(UTC),
+            )
+        )
         await db.commit()
         household_id = h.id
 
@@ -72,7 +82,9 @@ async def _setup_db(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_two_concurrent_workers_claim_same_household_date_only_one_wins(tmp_path: Path) -> None:
+async def test_two_concurrent_workers_claim_same_household_date_only_one_wins(
+    tmp_path: Path,
+) -> None:
     engine, session_maker, household_id = await _setup_db(tmp_path)
     try:
         today = date(2026, 11, 25)

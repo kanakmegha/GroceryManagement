@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
@@ -109,6 +110,8 @@ class HouseholdRecipePreferencesOut(HouseholdRecipePreferencesIn):
     distinct_completed_recipes: int = 0
     should_show_personalisation_prompt: bool = False
     personalisation_prompt_dismissed: bool = False
+    onboarding_completed: bool = False
+    preferences_completed_at: datetime | None = None
 
 
 class RecommendationModeUpdateRequest(BaseModel):

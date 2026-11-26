@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
+from app.core.errors import AppError
 from app.core.tenancy import HouseholdContext, get_household_context
 from app.modules.discovery.daily_scheduler import (
     MANUAL_REGENERATION_DAILY_LIMIT,
@@ -13,6 +14,7 @@ from app.modules.discovery.daily_schemas import DailyMealCategory, DailyMealPlan
 from app.modules.discovery.daily_service import get_daily_plan_for_household
 from app.modules.discovery.matcher import match_dishes_for_household
 from app.modules.discovery.schemas import DishMatchResponse
+from app.modules.recipes.service import is_household_preferences_completed
 
 router = APIRouter(prefix="/discover", tags=["discover"])
 
@@ -68,6 +70,12 @@ async def regenerate_daily_meal_plan(
     db: AsyncSession = Depends(get_db),
 ) -> DailyMealPlanResponse:
     """Explicitly user-triggered regeneration (bounded to 1 per household per local day)."""
+    if not await is_household_preferences_completed(db, ctx.household.id):
+        raise AppError(
+            status_code=409,
+            code="PREFERENCES_REQUIRED",
+            message="Save your household food preferences before generating a daily meal plan.",
+        )
     plan = await run_daily_plan_for_household(
         db,
         ctx.household.id,

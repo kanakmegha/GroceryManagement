@@ -24,7 +24,10 @@ from app.modules.discovery.daily_schemas import (
 )
 from app.modules.recipes.models import HouseholdRecipePreference
 from app.modules.recipes.schemas import RecipeChatIngredientOut, RecipeStepOut
-from app.modules.recipes.service import _load_active_inventory_payload
+from app.modules.recipes.service import (
+    _load_active_inventory_payload,
+    is_household_preferences_completed,
+)
 
 
 def get_active_meal_category(local_dt: datetime) -> DailyMealCategory:
@@ -165,6 +168,7 @@ async def get_daily_plan_for_household(
             )
         ).scalar_one_or_none()
         if prev_ready is None:
+            prefs_completed = await is_household_preferences_completed(db, household_id)
             return DailyMealPlanResponse(
                 status="pending",
                 local_date=today_local,
@@ -173,6 +177,7 @@ async def get_daily_plan_for_household(
                 auto_attempted=False,
                 manual_regeneration_count=0,
                 manual_regeneration_limit=MANUAL_REGENERATION_DAILY_LIMIT,
+                onboarding_required=not prefs_completed,
             )
         plan = prev_ready
         is_stale_fallback = True

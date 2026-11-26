@@ -549,6 +549,15 @@ async def run_daily_plan_for_household(
     heartbeat_seconds: float = DEFAULT_HEARTBEAT_SECONDS,
 ) -> DailyMealPlan | None:
     """Claim and generate the daily 8-recipe plan with heartbeat renewal and fenced writes."""
+    from app.modules.recipes.service import is_household_preferences_completed
+
+    if not await is_household_preferences_completed(db, household_id):
+        logger.debug(
+            "Skipping daily meal plan generation for household %s: preferences not completed",
+            household_id,
+        )
+        return None
+
     pref_tz = (
         await db.execute(
             select(HouseholdRecipePreference.timezone).where(
