@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { Platform, View } from 'react-native';
 import { Redirect, Slot, usePathname, type ErrorBoundaryProps } from 'expo-router';
@@ -9,6 +9,8 @@ import {
   isDemoPath,
   shouldRedirectToDemo,
 } from '../src/features/demo/demoMode';
+import { IosInstallBanner } from '../src/features/pwa/IosInstallBanner';
+import { registerPwaServiceWorker } from '../src/features/pwa/pwaRegistration';
 import { ClerkLoaded, ClerkLoading, ClerkProvider, Show } from '@clerk/expo';
 import { tokenCache } from '@clerk/expo/token-cache';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -49,6 +51,12 @@ export default function RootLayout() {
   const { clerkPublishableKey, demoModeEnabled } = getPublicEnvConfig();
   const pathname = usePathname();
 
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      registerPwaServiceWorker();
+    }
+  }, []);
+
   // Explicit application modes. Demo Mode never mounts Clerk or the authenticated QueryClient,
   // so anonymous browsing has no auth prerequisite and no cache shared with real households.
   if (demoModeEnabled && isDemoPath(pathname)) {
@@ -84,6 +92,7 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />
+      <IosInstallBanner />
       <QueryClientProvider client={queryClient}>
         <ClerkProvider publishableKey={clerkPublishableKey} tokenCache={tokenCache}>
           <ClerkLoading>
