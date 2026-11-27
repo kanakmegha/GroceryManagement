@@ -90,7 +90,10 @@ import {
 import {
   computeDraftFinancials,
   computeLineTotalFromQtyAndRate,
+  deriveTotalReviewState,
   filterLiveOcrWarnings,
+  formatSignedRupeesFromPaise,
+  resolvePatchTotalAmountPaise,
 } from "./purchaseFinancials";
 
 interface EditableDraftLine {
@@ -249,6 +252,7 @@ export function PurchasesScreen() {
   const [igstRupees, setIgstRupees] = useState("0.00");
   const [roundingRupees, setRoundingRupees] = useState("0.00");
   const [receiptTotalRupees, setReceiptTotalRupees] = useState("0.00");
+  const totalEditedByUserRef = useRef(false);
   const [lines, setLines] = useState<EditableDraftLine[]>([]);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
@@ -344,6 +348,7 @@ export function PurchasesScreen() {
         : paiseToRupeesString(rPaise),
     );
     setReceiptTotalRupees(paiseToRupeesString(draft.total_amount_paise ?? 0));
+    totalEditedByUserRef.current = false;
     setLines(
       (draft.items ?? []).map((item, idx) => ({
         localKey: item.id || `draft-line-${idx}`,
@@ -451,6 +456,7 @@ export function PurchasesScreen() {
     setIgstRupees("0.00");
     setRoundingRupees("0.00");
     setReceiptTotalRupees("0.00");
+    totalEditedByUserRef.current = false;
     setLines([makeEmptyLine(0)]);
     setMealType(null);
     setDiningMode(null);
@@ -768,7 +774,17 @@ export function PurchasesScreen() {
             igst_paise: igstP,
             tax_paise: taxP,
             rounding_paise: roundP,
-            total_amount_paise: totalPaise,
+            ...(resolvePatchTotalAmountPaise(
+              receiptTotalRupees,
+              totalEditedByUserRef.current,
+            ) !== undefined
+              ? {
+                total_amount_paise: resolvePatchTotalAmountPaise(
+                  receiptTotalRupees,
+                  totalEditedByUserRef.current,
+                ),
+              }
+              : {}),
             items: itemsPayload,
           };
           saved = await apiClient.request<PurchaseDraft>(
@@ -788,7 +804,17 @@ export function PurchasesScreen() {
             igst_paise: igstP,
             tax_paise: taxP,
             rounding_paise: roundP,
-            total_amount_paise: totalPaise,
+            ...(resolvePatchTotalAmountPaise(
+              receiptTotalRupees,
+              totalEditedByUserRef.current,
+            ) !== undefined
+              ? {
+                total_amount_paise: resolvePatchTotalAmountPaise(
+                  receiptTotalRupees,
+                  totalEditedByUserRef.current,
+                ),
+              }
+              : {}),
             items: itemsPayload,
           };
           saved = await apiClient.post<PurchaseDraft>(
@@ -1722,7 +1748,10 @@ export function PurchasesScreen() {
                       <Text style={styles.fieldLabel}>Final Paid (₹)</Text>
                       <TextInput
                         value={receiptTotalRupees}
-                        onChangeText={setReceiptTotalRupees}
+                        onChangeText={(val) => {
+                          totalEditedByUserRef.current = true;
+                          setReceiptTotalRupees(val);
+                        }}
                         keyboardType="decimal-pad"
                         placeholder="0.00"
                         placeholderTextColor={colors.textMuted}
@@ -2312,10 +2341,17 @@ export function PurchasesScreen() {
 
                   <Pressable
                     onPress={() => void handleConfirmPurchase()}
-                    disabled={isSavingDraft || isConfirming}
+                    disabled={
+                      isSavingDraft ||
+                      isConfirming ||
+                      missingFields.includes("total_amount")
+                    }
                     style={[
                       styles.confirmButton,
-                      (isSavingDraft || isConfirming) && styles.buttonDisabled,
+                      (isSavingDraft ||
+                        isConfirming ||
+                        missingFields.includes("total_amount")) &&
+                        styles.buttonDisabled,
                     ]}
                     accessibilityRole="button"
                     accessibilityLabel="Confirm purchase into inventory"
@@ -2329,6 +2365,59 @@ export function PurchasesScreen() {
                       )}
                   </Pressable>
                 </View>
+                {missingFields.includes("total_amount") ? (() => {
+                  const reviewState = deriveTotalReviewState({
+                    missingFields,
+                    receiptTotalRupees,
+                    financials: computeDraftFinancials({
+                      lines,
+                      subtotalRupees,
+                      discountRupees,
+                      additionalChargesRupees,
+                      cgstRupees,
+                      sgstRupees,
+                      igstRupees,
+                      roundingRupees,
+                      receiptTotalRupees,
+                    }),
+                    ocrWarnings,
+                  });
+                  return (
+                    <View
+                      style={{
+                        marginHorizontal: spacing.md,
+                        marginBottom: spacing.sm,
+                        padding: spacing.sm,
+                        borderRadius: radii.md,
+                        backgroundColor: colors.warningBg,
+                        borderWidth: 1,
+                        borderColor: colors.warning,
+                        gap: 4,
+                      }}
+                    >
+                      <Text style={{ fontWeight: "700", color: colors.textPrimary, fontSize: 13 }}>
+                        Receipt extracted — total needs review before confirmation
+                      </Text>
+                      {reviewState.reason ? (
+                        <Text style={{ color: colors.textSecondary, fontSize: 12 }}>
+                          {reviewState.reason}
+                        </Text>
+                      ) : null}
+                      <Text style={{ color: colors.textSecondary, fontSize: 12 }}>
+                        {reviewState.extractedTotalPaise !== null
+                          ? `Printed total: ${formatSignedRupeesFromPaise(reviewState.extractedTotalPaise)} · `
+                          : "Printed total: Not verified · "}
+                        Calculated: {formatSignedRupeesFromPaise(reviewState.calculatedTotalPaise)}
+                        {reviewState.discrepancyPaise !== null
+                          ? ` (Diff: ${formatSignedRupeesFromPaise(reviewState.discrepancyPaise)})`
+                          : ""}
+                      </Text>
+                      <Text style={{ color: colors.textSecondary, fontSize: 12 }}>
+                        Enter the printed total above and tap Save Draft to enable Confirm Purchase.
+                      </Text>
+                    </View>
+                  );
+                })() : null}
               </>
             )}
         </View>

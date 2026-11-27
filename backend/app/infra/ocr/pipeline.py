@@ -68,6 +68,24 @@ def _select_local_ocr_provider() -> TextOcrProvider | None:
     return None
 
 
+def _needs_vlm_escalation(receipt: ExtractedReceipt) -> bool:
+    """Decide whether local OCR output is incomplete or financially contradictory."""
+    if not receipt.lines or not receipt.math_reconciled:
+        return True
+    if receipt.grand_total_paise is None:
+        return True
+    if receipt.confidence < 0.55:
+        return True
+    line_sum = sum(line.total_paise or 0 for line in receipt.lines)
+    computed_net = (
+        line_sum
+        - (receipt.discount_paise or 0)
+        + (receipt.tax_paise or 0)
+        + (receipt.rounding_paise or 0)
+    )
+    return computed_net < 0
+
+
 def _vlm_dict_to_receipt(
     vlm_data: dict[str, Any],
     *,
@@ -395,7 +413,7 @@ async def extract_receipt(
         if (
             vlm.is_available()
             and (quality is None or quality.is_readable)
-            and (not receipt.lines or not receipt.math_reconciled)
+            and _needs_vlm_escalation(receipt)
         ):
             vlm_input_bytes = enhanced_png_bytes
             if vlm_input_bytes is None:

@@ -39,6 +39,207 @@ def _normalize_alias(value: str) -> str:
     return re.sub(r"[^a-z0-9\s]+", " ", value.strip().lower()).strip()
 
 
+from dataclasses import dataclass
+
+DEFAULT_TOTAL_RECONCILIATION_TOLERANCE_PAISE = 200  # ₹2.00
+
+
+@dataclass(frozen=True)
+class OcrTotalReconciliationResult:
+    """Result of reconciling OCR-extracted financial summary against line items."""
+
+    total_amount_paise: int
+    needs_review: bool
+    review_reason: str | None
+    explicit_total_paise: int | None
+    calculated_total_paise: int
+    discrepancy_paise: int | None
+    issue_code: str | None = None
+    issue_message: str | None = None
+
+
+def reconcile_ocr_purchase_total(
+    *,
+    explicit_total_paise: int | None,
+    subtotal_paise: int | None,
+    line_items_sum_paise: int,
+    discount_paise: int = 0,
+    additional_charges_paise: int = 0,
+    tax_paise: int = 0,
+    rounding_paise: int = 0,
+    has_incomplete_extraction: bool = False,
+    tolerance_paise: int = DEFAULT_TOTAL_RECONCILIATION_TOLERANCE_PAISE,
+) -> OcrTotalReconciliationResult:
+    """Reconcile OCR financial fields without ever using abs() or silently clamping.
+
+    Rules:
+    1. Explicit negative grand total (refund/credit note) -> raises 422 REFUND_OR_CREDIT_RECEIPT.
+    2. Explicit non-negative grand total -> preferred; flags review if discrepancy > tolerance.
+    3. No explicit grand total + non-negative computed total -> used; flags review if subtotal
+       disagrees with line_items_sum by > tolerance.
+    4. No explicit grand total + negative computed total (missed items / misclassified discount) ->
+       preserves draft with total_amount_paise=0 explicitly flagged as needs_review so the user
+       keeps extracted items and must enter/confirm the printed total before confirmation.
+    """
+    calculated_total = (
+        line_items_sum_paise
+        - discount_paise
+        + additional_charges_paise
+        + tax_paise
+        + rounding_paise
+    )
+
+    if explicit_total_paise is not None:
+        explicit_val = int(explicit_total_paise)
+        if explicit_val < 0:
+            rupees = explicit_val / 100.0
+            raise AppError(
+                status_code=422,
+                code="REFUND_OR_CREDIT_RECEIPT",
+                message=(
+                    f"Refund or credit-note receipt detected (printed total ₹{rupees:.2f}). "
+                    "Negative refund totals cannot be saved as a purchase."
+                ),
+                details={"explicit_total_paise": explicit_val},
+            )
+        discrepancy = abs(explicit_val - calculated_total)
+        if discrepancy > tolerance_paise:
+            return OcrTotalReconciliationResult(
+                total_amount_paise=explicit_val,
+                needs_review=True,
+                review_reason="reconciliation_mismatch",
+                explicit_total_paise=explicit_val,
+                calculated_total_paise=calculated_total,
+                discrepancy_paise=discrepancy,
+                issue_code="TOTAL_RECONCILIATION_MISMATCH",
+                issue_message=(
+                    f"Printed total (₹{explicit_val / 100:.2f}) disagrees with calculated "
+                    f"items/discounts/taxes (₹{calculated_total / 100:.2f}) by "
+                    f"₹{discrepancy / 100:.2f}. Please review before confirming."
+                ),
+            )
+        return OcrTotalReconciliationResult(
+            total_amount_paise=explicit_val,
+            needs_review=False,
+            review_reason=None,
+            explicit_total_paise=explicit_val,
+            calculated_total_paise=calculated_total,
+            discrepancy_paise=discrepancy,
+        )
+
+    if has_incomplete_extraction:
+        return OcrTotalReconciliationResult(
+            total_amount_paise=0,
+            needs_review=True,
+            review_reason="incomplete_extraction",
+            explicit_total_paise=None,
+            calculated_total_paise=calculated_total,
+            discrepancy_paise=None,
+            issue_code="TOTAL_NEEDS_REVIEW",
+            issue_message=(
+                "Receipt extraction was incomplete. Please enter the printed purchase total "
+                "before confirming."
+            ),
+        )
+
+    if calculated_total < 0:
+        return OcrTotalReconciliationResult(
+            total_amount_paise=0,
+            needs_review=True,
+            review_reason="negative_computed_total",
+            explicit_total_paise=None,
+            calculated_total_paise=calculated_total,
+            discrepancy_paise=None,
+            issue_code="TOTAL_NEEDS_REVIEW",
+            issue_message=(
+                f"Calculated receipt total was negative (₹{calculated_total / 100:.2f}), "
+                "likely due to missed line items or a misclassified discount. "
+                "Extracted items were preserved — please review and enter the printed total "
+                "before confirming."
+            ),
+        )
+
+    if subtotal_paise is not None:
+        sub_diff = abs(int(subtotal_paise) - line_items_sum_paise)
+        if sub_diff > tolerance_paise:
+            return OcrTotalReconciliationResult(
+                total_amount_paise=calculated_total,
+                needs_review=True,
+                review_reason="subtotal_mismatch",
+                explicit_total_paise=None,
+                calculated_total_paise=calculated_total,
+                discrepancy_paise=sub_diff,
+                issue_code="SUBTOTAL_LINE_MISMATCH",
+                issue_message=(
+                    f"Receipt subtotal (₹{int(subtotal_paise) / 100:.2f}) disagrees with "
+                    f"extracted line items (₹{line_items_sum_paise / 100:.2f}). "
+                    "Please verify the total before confirming."
+                ),
+            )
+
+    return OcrTotalReconciliationResult(
+        total_amount_paise=calculated_total,
+        needs_review=False,
+        review_reason=None,
+        explicit_total_paise=None,
+        calculated_total_paise=calculated_total,
+        discrepancy_paise=0,
+    )
+
+
+def _is_total_review_required(purchase: Purchase) -> bool:
+    """Explicit persisted review state check (never relies solely on total_amount_paise == 0)."""
+    payload = purchase.raw_ocr_payload if isinstance(purchase.raw_ocr_payload, dict) else {}
+    total_review = payload.get("total_review")
+    if isinstance(total_review, dict) and total_review.get("status") == "needs_review":
+        return True
+    missing = purchase.missing_fields_json if isinstance(purchase.missing_fields_json, list) else []
+    return "total_amount" in missing
+
+
+def _mark_total_review_verified(purchase: Purchase) -> None:
+    """Clear persisted total review state only after explicit user total submission."""
+    payload = dict(purchase.raw_ocr_payload) if isinstance(purchase.raw_ocr_payload, dict) else {}
+    existing_review = payload.get("total_review")
+    if isinstance(existing_review, dict):
+        payload["total_review"] = {**existing_review, "status": "verified"}
+    else:
+        payload["total_review"] = {"status": "verified"}
+    purchase.raw_ocr_payload = payload
+    missing = [
+        f
+        for f in (purchase.missing_fields_json or [])
+        if f != "total_amount"
+    ]
+    purchase.missing_fields_json = missing
+
+
+def _validate_non_negative_total_paise(
+    computed_total_paise: int,
+    *,
+    source: str = "receipt",
+) -> int:
+    """Validate that a purchase total is non-negative before database persistence.
+
+    Never converts negative values via abs() and never silently clamps to zero.
+    Raises an actionable 422 AppError so invalid/ambiguous OCR totals never trigger
+    a PostgreSQL CheckViolationError (HTTP 500/502).
+    """
+    if computed_total_paise < 0:
+        rupees = computed_total_paise / 100.0
+        raise AppError(
+            status_code=422,
+            code="INVALID_PURCHASE_TOTAL",
+            message=(
+                f"Could not save {source}: calculated total is negative "
+                f"(₹{rupees:.2f}). Please verify the receipt discount, tax, and line items "
+                "or enter the purchase manually."
+            ),
+            details={"calculated_total_paise": computed_total_paise},
+        )
+    return computed_total_paise
+
+
 def _get_extract_receipt() -> Any:
     from app.infra.ocr.pipeline import extract_receipt  # type: ignore[import-not-found]
 
@@ -435,22 +636,66 @@ async def create_ocr_draft(
         for issue in (ocr_result.get("validation_issues") or [])
     )
 
+    subtotal_is_synthetic = False
     if purchase.subtotal_paise is None and total_paise > 0 and not has_incomplete_extraction:
         purchase.subtotal_paise = total_paise
+        subtotal_is_synthetic = True
 
     explicit_total = (
         ocr_result.get("total_amount_paise")
         if ocr_result.get("total_amount_paise") is not None
         else ocr_result.get("grand_total_paise")
     )
-    if explicit_total is not None:
-        purchase.total_amount_paise = int(explicit_total)
-    elif has_incomplete_extraction:
-        purchase.total_amount_paise = 0
-    else:
-        purchase.total_amount_paise = (
-            total_paise - discount_paise + additional_charges_paise + tax_paise + rounding_paise
+    try:
+        reconciliation = reconcile_ocr_purchase_total(
+            explicit_total_paise=int(explicit_total) if explicit_total is not None else None,
+            subtotal_paise=purchase.subtotal_paise,
+            line_items_sum_paise=total_paise,
+            discount_paise=discount_paise,
+            additional_charges_paise=additional_charges_paise,
+            tax_paise=tax_paise,
+            rounding_paise=rounding_paise,
+            has_incomplete_extraction=has_incomplete_extraction,
         )
+    except AppError:
+        await db.rollback()
+        raise
+
+    purchase.total_amount_paise = _validate_non_negative_total_paise(
+        reconciliation.total_amount_paise, source="receipt"
+    )
+
+    updated_payload = (
+        dict(purchase.raw_ocr_payload) if isinstance(purchase.raw_ocr_payload, dict) else {}
+    )
+    updated_payload["total_review"] = {
+        "status": "needs_review" if reconciliation.needs_review else "verified",
+        "reason": reconciliation.review_reason,
+        "explicit_total_paise": reconciliation.explicit_total_paise,
+        "calculated_total_paise": reconciliation.calculated_total_paise,
+        "discrepancy_paise": reconciliation.discrepancy_paise,
+        "subtotal_is_synthetic": subtotal_is_synthetic,
+    }
+    if reconciliation.issue_code and reconciliation.issue_message:
+        existing_issues = list(updated_payload.get("validation_issues") or [])
+        existing_issues.append(
+            {
+                "code": reconciliation.issue_code,
+                "severity": "warning",
+                "message": reconciliation.issue_message,
+                "field": "total_amount",
+                "calculated_total_paise": reconciliation.calculated_total_paise,
+                "explicit_total_paise": reconciliation.explicit_total_paise,
+            }
+        )
+        updated_payload["validation_issues"] = existing_issues
+    purchase.raw_ocr_payload = updated_payload
+
+    if reconciliation.needs_review:
+        cur_missing = list(purchase.missing_fields_json or [])
+        if "total_amount" not in cur_missing:
+            cur_missing.append("total_amount")
+        purchase.missing_fields_json = cur_missing
 
     await db.commit()
     return await get_purchase(db, household_id, purchase.id)
@@ -746,10 +991,18 @@ async def merge_ocr_into_draft(
 
     raw_items = ocr_result.get("items") or ocr_result.get("lines") or []
     if raw_items:
-        existing_keys = {
-            ((it.normalized_name or it.display_name).strip().lower(), it.line_total_paise)
+        from collections import Counter
+
+        existing_sig_counts: Counter[tuple[str, str, int, int, int]] = Counter(
+            (
+                (it.normalized_name or it.display_name).strip().lower(),
+                f"{float(getattr(it, 'quantity', getattr(it, 'raw_qty', 1)) or 1):.3f}",
+                int(it.unit_price_paise or 0),
+                int(it.discount_paise or 0),
+                int(it.line_total_paise or 0),
+            )
             for it in purchase.items
-        }
+        )
         deduped_items = []
         for ri in raw_items:
             d_name = str(
@@ -758,13 +1011,18 @@ async def merge_ocr_into_draft(
                 or _extract_attr(ri, "raw_text")
                 or ""
             ).strip()
+            r_qty = f"{float(_extract_attr(ri, 'qty') or _extract_attr(ri, 'quantity') or 1):.3f}"
+            u_price = int(_extract_attr(ri, "unit_price_paise") or 0)
+            i_disc = int(_extract_attr(ri, "discount_paise") or 0)
             l_tot = int(
                 _extract_attr(ri, "line_total_paise") or _extract_attr(ri, "total_paise") or 0
             )
-            key = (d_name.lower(), l_tot)
-            if key not in existing_keys:
-                existing_keys.add(key)
-                deduped_items.append(ri)
+            sig = (d_name.lower(), r_qty, u_price, i_disc, l_tot)
+            if existing_sig_counts[sig] > 0:
+                # Consume at most 1-for-1 cross-page overlap; never collapse same-page duplicates
+                existing_sig_counts[sig] -= 1
+                continue
+            deduped_items.append(ri)
 
         if deduped_items:
             names = [
@@ -777,7 +1035,7 @@ async def merge_ocr_into_draft(
             if not purchase.items:
                 purchase.receipt_category = rec_cat
                 purchase.document_type = doc_type
-            await _build_ocr_purchase_items(
+            added_items = await _build_ocr_purchase_items(
                 db,
                 purchase=purchase,
                 household_id=household_id,
@@ -787,14 +1045,107 @@ async def merge_ocr_into_draft(
             )
             missing = [f for f in (purchase.missing_fields_json or []) if f != "line_items"]
             purchase.missing_fields_json = missing
+        else:
+            added_items = []
+    else:
+        added_items = []
 
-    # Fill missing financial summary fields without double-counting
-    if purchase.total_amount_paise == 0:
-        explicit_total = ocr_result.get("total_amount_paise") or ocr_result.get("grand_total_paise")
-        if explicit_total is not None:
-            purchase.total_amount_paise = int(explicit_total)
-    if purchase.subtotal_paise is None and ocr_result.get("subtotal_paise") is not None:
-        purchase.subtotal_paise = int(ocr_result["subtotal_paise"])
+    prev_items_sum = sum(it.line_total_paise for it in purchase.items)
+    combined_items_sum = prev_items_sum + sum(it.line_total_paise for it in added_items)
+
+    existing_payload = (
+        dict(purchase.raw_ocr_payload) if isinstance(purchase.raw_ocr_payload, dict) else {}
+    )
+    existing_review = existing_payload.get("total_review")
+    subtotal_is_synthetic = bool(
+        isinstance(existing_review, dict) and existing_review.get("subtotal_is_synthetic", False)
+    )
+
+    # Fill missing financial summary fields without overwriting genuine merchant subtotals
+    if ocr_result.get("subtotal_paise") is not None:
+        if purchase.subtotal_paise is None or subtotal_is_synthetic:
+            purchase.subtotal_paise = int(ocr_result["subtotal_paise"])
+            subtotal_is_synthetic = False
+    elif added_items and subtotal_is_synthetic:
+        purchase.subtotal_paise = combined_items_sum
+
+    if purchase.discount_paise == 0 and ocr_result.get("discount_paise"):
+        purchase.discount_paise = int(ocr_result["discount_paise"])
+    if purchase.tax_paise == 0 and ocr_result.get("tax_paise"):
+        purchase.tax_paise = int(ocr_result["tax_paise"])
+    if purchase.additional_charges_paise == 0 and ocr_result.get("additional_charges_paise"):
+        purchase.additional_charges_paise = int(ocr_result["additional_charges_paise"])
+    if purchase.rounding_paise == 0 and ocr_result.get("rounding_paise"):
+        purchase.rounding_paise = int(ocr_result["rounding_paise"])
+
+    was_review_required = _is_total_review_required(purchase)
+    existing_explicit = (
+        existing_review.get("explicit_total_paise")
+        if isinstance(existing_review, dict)
+        else None
+    )
+    incoming_explicit_raw = (
+        ocr_result.get("total_amount_paise")
+        if ocr_result.get("total_amount_paise") is not None
+        else ocr_result.get("grand_total_paise")
+    )
+    incoming_explicit = int(incoming_explicit_raw) if incoming_explicit_raw is not None else None
+    if incoming_explicit is not None and incoming_explicit < 0:
+        effective_explicit: int | None = incoming_explicit
+    elif existing_explicit is not None:
+        effective_explicit = int(existing_explicit)
+    else:
+        effective_explicit = incoming_explicit
+
+    try:
+        reconciliation = reconcile_ocr_purchase_total(
+            explicit_total_paise=effective_explicit,
+            subtotal_paise=purchase.subtotal_paise,
+            line_items_sum_paise=combined_items_sum,
+            discount_paise=purchase.discount_paise,
+            additional_charges_paise=purchase.additional_charges_paise,
+            tax_paise=purchase.tax_paise,
+            rounding_paise=purchase.rounding_paise,
+        )
+    except AppError:
+        await db.rollback()
+        raise
+
+    purchase.total_amount_paise = _validate_non_negative_total_paise(
+        reconciliation.total_amount_paise, source="receipt"
+    )
+    effective_needs_review = was_review_required or reconciliation.needs_review
+    effective_reason = reconciliation.review_reason or (
+        existing_review.get("reason") if isinstance(existing_review, dict) else None
+    )
+    existing_payload["total_review"] = {
+        "status": "needs_review" if effective_needs_review else "verified",
+        "reason": effective_reason,
+        "explicit_total_paise": reconciliation.explicit_total_paise,
+        "calculated_total_paise": reconciliation.calculated_total_paise,
+        "discrepancy_paise": reconciliation.discrepancy_paise,
+        "subtotal_is_synthetic": subtotal_is_synthetic,
+    }
+    if reconciliation.issue_code and reconciliation.issue_message:
+        existing_issues = list(existing_payload.get("validation_issues") or [])
+        existing_issues.append(
+            {
+                "code": reconciliation.issue_code,
+                "severity": "warning",
+                "message": reconciliation.issue_message,
+                "field": "total_amount",
+                "calculated_total_paise": reconciliation.calculated_total_paise,
+                "explicit_total_paise": reconciliation.explicit_total_paise,
+            }
+        )
+        existing_payload["validation_issues"] = existing_issues
+    purchase.raw_ocr_payload = existing_payload
+
+    if effective_needs_review:
+        cur_missing = list(purchase.missing_fields_json or [])
+        if "total_amount" not in cur_missing:
+            cur_missing.append("total_amount")
+        purchase.missing_fields_json = cur_missing
 
     await db.commit()
     return await get_purchase(db, household_id, purchase.id)
@@ -1029,7 +1380,7 @@ async def create_manual_draft(
 
     if purchase.subtotal_paise is None:
         purchase.subtotal_paise = total_paise
-    purchase.total_amount_paise = (
+    candidate_total = (
         payload.total_amount_paise
         if payload.total_amount_paise is not None
         else (
@@ -1039,6 +1390,11 @@ async def create_manual_draft(
             + tax_paise
             + payload.rounding_paise
         )
+    )
+    if candidate_total < 0:
+        await db.rollback()
+    purchase.total_amount_paise = _validate_non_negative_total_paise(
+        candidate_total, source="purchase"
     )
     await db.commit()
     return await get_purchase(db, household_id, purchase.id)
@@ -1455,17 +1811,29 @@ async def update_draft(
         if payload.subtotal_paise is None:
             purchase.subtotal_paise = total_paise
         if payload.total_amount_paise is not None:
-            purchase.total_amount_paise = payload.total_amount_paise
+            candidate_total = payload.total_amount_paise
         else:
-            purchase.total_amount_paise = (
+            candidate_total = (
                 (purchase.subtotal_paise if purchase.subtotal_paise is not None else total_paise)
                 - purchase.discount_paise
                 + purchase.additional_charges_paise
                 + purchase.tax_paise
                 + purchase.rounding_paise
             )
+        if candidate_total < 0:
+            await db.rollback()
+        purchase.total_amount_paise = _validate_non_negative_total_paise(
+            candidate_total, source="purchase"
+        )
+        if payload.total_amount_paise is not None:
+            _mark_total_review_verified(purchase)
     elif payload.total_amount_paise is not None:
-        purchase.total_amount_paise = payload.total_amount_paise
+        if payload.total_amount_paise < 0:
+            await db.rollback()
+        purchase.total_amount_paise = _validate_non_negative_total_paise(
+            payload.total_amount_paise, source="purchase"
+        )
+        _mark_total_review_verified(purchase)
 
     await db.commit()
     return await get_purchase(db, household_id, purchase.id)
@@ -1626,6 +1994,16 @@ async def confirm_purchase(
             status_code=422,
             code="VALIDATION_ERROR",
             message="Cannot confirm a purchase with zero items.",
+        )
+
+    if _is_total_review_required(purchase):
+        raise AppError(
+            status_code=422,
+            code="TOTAL_REVIEW_REQUIRED",
+            message=(
+                "This receipt's purchase total needs review before confirmation. "
+                "Please verify and save the printed total."
+            ),
         )
 
     if meal_payload and meal_payload.enforce_ingredient_review:
