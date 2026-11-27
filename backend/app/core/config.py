@@ -1,7 +1,7 @@
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Literal
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -59,6 +59,17 @@ class Settings(BaseSettings):
     EXPERIMENTAL_OCR_BASE_URL: str = "https://router.huggingface.co/v1/chat/completions"
     EXPERIMENTAL_OCR_API_KEY: str = ""
     EXPERIMENTAL_OCR_TIMEOUT_SECONDS: float = 90.0
+
+    # External RapidOCR microservice configuration (Phase A integration)
+    OCR_PROVIDER: Literal[
+        "auto", "remote_rapidocr", "rapidocr", "local_vision", "tesseract"
+    ] = "auto"
+    OCR_REMOTE_BASE_URL: str = ""
+    OCR_API_TOKEN: str = ""
+    OCR_REMOTE_CONNECT_TIMEOUT_SECONDS: float = Field(default=8.0, gt=0.0, le=60.0)
+    OCR_REMOTE_READ_TIMEOUT_SECONDS: float = Field(default=25.0, gt=0.0, le=300.0)
+    OCR_REMOTE_MAX_RETRIES: int = Field(default=1, ge=0, le=5)
+    OCR_REMOTE_FALLBACK_TO_TESSERACT: bool = False
 
     @field_validator("CLERK_AUTHORIZED_PARTIES", "CORS_ALLOWED_ORIGINS", mode="before")
     @classmethod

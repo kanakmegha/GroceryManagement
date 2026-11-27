@@ -5,6 +5,8 @@ OpenCV preprocessing.
 from __future__ import annotations
 
 import io
+import logging
+import time
 from dataclasses import dataclass, field
 
 import cv2
@@ -13,7 +15,10 @@ from PIL import Image, ImageOps
 
 from app.infra.ocr.schemas import OcrTokenBox, ReceiptQualityReport
 
+logger = logging.getLogger(__name__)
+
 MAX_RECEIPT_BYTES = 10 * 1024 * 1024  # 10 MB
+MAX_INITIAL_IMAGE_DIM = 1800
 MAX_PDF_PAGES = 10
 PDF_RENDER_DPI = 250
 
@@ -199,6 +204,7 @@ def _compute_iqa(bgr: np.ndarray) -> ReceiptQualityReport:
 
 def preprocess_receipt_image(image_bytes: bytes) -> PreprocessedImageResult:
     """Decode, assess quality, and conditionally preprocess a receipt image."""
+    started = time.perf_counter()
     warnings: list[str] = []
 
     if len(image_bytes) > MAX_RECEIPT_BYTES:
@@ -208,18 +214,40 @@ def preprocess_receipt_image(image_bytes: bytes) -> PreprocessedImageResult:
 
     with Image.open(io.BytesIO(image_bytes)) as pil_img:
         pil_img = ImageOps.exif_transpose(pil_img)
-        if pil_img.mode not in ("RGB", "L"):
+        orig_w, orig_h = pil_img.size
+        if max(orig_w, orig_h) > MAX_INITIAL_IMAGE_DIM:
+            pil_img.thumbnail(
+                (MAX_INITIAL_IMAGE_DIM, MAX_INITIAL_IMAGE_DIM),
+                Image.Resampling.LANCZOS,
+            )
+        proc_w, proc_h = pil_img.size
+        if pil_img.mode != "RGB":
             pil_img = pil_img.convert("RGB")
-        rgb = np.array(pil_img.convert("RGB"))
+        rgb = np.array(pil_img)
         orig_buf = io.BytesIO()
         pil_img.save(orig_buf, format="PNG")
         original_png_bytes = orig_buf.getvalue()
 
     bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+    del rgb
     report = _compute_iqa(bgr)
 
     if not report.is_readable:
+        del bgr
         warnings.extend(report.retake_reasons)
+        logger.info(
+            "receipt_preprocess_metrics orig=%dx%d proc=%dx%d out=%dx%d "
+            "bytes_in=%d bytes_out=%d readable=false elapsed_ms=%d",
+            orig_w,
+            orig_h,
+            proc_w,
+            proc_h,
+            proc_w,
+            proc_h,
+            len(image_bytes),
+            len(original_png_bytes),
+            int((time.perf_counter() - started) * 1000),
+        )
         return PreprocessedImageResult(
             enhanced_png_bytes=original_png_bytes,
             original_png_bytes=original_png_bytes,
@@ -233,7 +261,8 @@ def preprocess_receipt_image(image_bytes: bytes) -> PreprocessedImageResult:
             "may need manual review."
         )
 
-    working = bgr.copy()
+    working = bgr
+    del bgr
 
     # 1. Perspective correction only when a clean 4-corner receipt boundary is found
     quad = _detect_receipt_quad(working)
@@ -243,15 +272,18 @@ def preprocess_receipt_image(image_bytes: bytes) -> PreprocessedImageResult:
             working = warped
             report.perspective_corrected = True
             report.applied_steps.append("perspective_warp")
+        del warped
 
     # 2. Deskew only for mild/moderate tilt (0.6..15 deg)
-    skew = _estimate_skew_angle(cv2.cvtColor(working, cv2.COLOR_BGR2GRAY))
+    gray_skew = cv2.cvtColor(working, cv2.COLOR_BGR2GRAY)
+    skew = _estimate_skew_angle(gray_skew)
+    del gray_skew
     if 0.6 <= abs(skew) <= 15.0:
         working = _rotate_bound(working, skew)
         report.deskewed = True
         report.applied_steps.append(f"deskew({skew:+.1f}deg)")
 
-    # 3. Resolution normalization (upscale tiny text, cap huge 12MP+ photos)
+    # 3. Resolution normalization (upscale tiny text, cap at MAX_INITIAL_IMAGE_DIM)
     wh, ww = working.shape[:2]
     max_dim = max(wh, ww)
     if max_dim < 1400:
@@ -262,26 +294,29 @@ def preprocess_receipt_image(image_bytes: bytes) -> PreprocessedImageResult:
             interpolation=cv2.INTER_CUBIC,
         )
         report.applied_steps.append("upscale_1600")
-    elif max_dim > 2600:
-        dn_scale = 2600.0 / max_dim
+    elif max_dim > MAX_INITIAL_IMAGE_DIM:
+        dn_scale = float(MAX_INITIAL_IMAGE_DIM) / max_dim
         working = cv2.resize(
             working,
             (int(round(ww * dn_scale)), int(round(wh * dn_scale))),
             interpolation=cv2.INTER_AREA,
         )
-        report.applied_steps.append("downscale_2600")
+        report.applied_steps.append(f"downscale_{MAX_INITIAL_IMAGE_DIM}")
 
     # 4. Illumination normalization (only when uneven shadows or dark lighting detected)
     if report.illumination_variance > 22.0 or report.brightness_mean < 95.0:
         lab = cv2.cvtColor(working, cv2.COLOR_BGR2LAB)
         l_ch, a_ch, b_ch = cv2.split(lab)
-        # Estimate smooth illumination field using large morphological closing
+        del lab
         bg_kernel_size = max(31, (min(working.shape[:2]) // 20) | 1)
         bg_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (bg_kernel_size, bg_kernel_size))
         bg = cv2.morphologyEx(l_ch, cv2.MORPH_CLOSE, bg_kernel)
         bg_safe = np.maximum(bg, 1).astype(np.float32)
+        del bg
         norm_l = np.clip((l_ch.astype(np.float32) / bg_safe) * 235.0, 0, 255).astype(np.uint8)
+        del bg_safe, l_ch
         working = cv2.cvtColor(cv2.merge((norm_l, a_ch, b_ch)), cv2.COLOR_LAB2BGR)
+        del norm_l, a_ch, b_ch
         report.illumination_normalized = True
         report.applied_steps.append("illumination_divide")
 
@@ -289,15 +324,34 @@ def preprocess_receipt_image(image_bytes: bytes) -> PreprocessedImageResult:
     if report.contrast_std < 48.0 or report.illumination_normalized:
         lab = cv2.cvtColor(working, cv2.COLOR_BGR2LAB)
         l_ch, a_ch, b_ch = cv2.split(lab)
+        del lab
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         l_eq = clahe.apply(l_ch)
+        del l_ch
         working = cv2.cvtColor(cv2.merge((l_eq, a_ch, b_ch)), cv2.COLOR_LAB2BGR)
+        del l_eq, a_ch, b_ch
         report.contrast_enhanced = True
         report.applied_steps.append("clahe_lab_2.0")
 
-    # Encode enhanced image to PNG
+    out_h, out_w = working.shape[:2]
     ok, enc = cv2.imencode(".png", working)
+    del working
     enhanced_png_bytes = enc.tobytes() if ok else original_png_bytes
+    del enc
+
+    logger.info(
+        "receipt_preprocess_metrics orig=%dx%d proc=%dx%d out=%dx%d "
+        "bytes_in=%d bytes_out=%d readable=true elapsed_ms=%d",
+        orig_w,
+        orig_h,
+        proc_w,
+        proc_h,
+        out_w,
+        out_h,
+        len(image_bytes),
+        len(enhanced_png_bytes),
+        int((time.perf_counter() - started) * 1000),
+    )
 
     return PreprocessedImageResult(
         enhanced_png_bytes=enhanced_png_bytes,

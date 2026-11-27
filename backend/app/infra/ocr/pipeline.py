@@ -24,10 +24,13 @@ from app.infra.ocr.preprocessing import (
     extract_pdf_inputs,
     preprocess_receipt_image,
 )
+from app.core.config import get_settings
 from app.infra.ocr.providers import (
     HuggingFaceVlmProvider,
     LocalVisionOcrProvider,
+    RapidOcrProvider,
     RawOcrOutput,
+    RemoteRapidOcrProvider,
     TesseractOcrProvider,
     TextOcrProvider,
 )
@@ -62,10 +65,47 @@ __all__ = [
 
 
 def _select_local_ocr_provider() -> TextOcrProvider | None:
-    for candidate in (LocalVisionOcrProvider(), TesseractOcrProvider()):
+    mode = get_settings().OCR_PROVIDER
+    if mode == "remote_rapidocr":
+        candidate = RemoteRapidOcrProvider()
+        return candidate if candidate.is_available() else None
+    if mode == "rapidocr":
+        candidate = RapidOcrProvider()
+        return candidate if candidate.is_available() else None
+    if mode == "local_vision":
+        candidate = LocalVisionOcrProvider()
+        return candidate if candidate.is_available() else None
+    if mode == "tesseract":
+        candidate = TesseractOcrProvider()
+        return candidate if candidate.is_available() else None
+
+    for candidate in (
+        RemoteRapidOcrProvider(),
+        RapidOcrProvider(),
+        LocalVisionOcrProvider(),
+        TesseractOcrProvider(),
+    ):
         if candidate.is_available():
             return candidate
     return None
+
+
+def _needs_vlm_escalation(receipt: ExtractedReceipt) -> bool:
+    """Decide whether local OCR output is incomplete or financially contradictory."""
+    if not receipt.lines or not receipt.math_reconciled:
+        return True
+    if receipt.grand_total_paise is None:
+        return True
+    if receipt.confidence < 0.55:
+        return True
+    line_sum = sum(line.total_paise or 0 for line in receipt.lines)
+    computed_net = (
+        line_sum
+        - (receipt.discount_paise or 0)
+        + (receipt.tax_paise or 0)
+        + (receipt.rounding_paise or 0)
+    )
+    return computed_net < 0
 
 
 def _vlm_dict_to_receipt(
@@ -212,8 +252,13 @@ def _run_local_ocr_on_images_sync(
         t_p1 = time.perf_counter()
         ocr_out: RawOcrOutput = provider.recognize_image(prep.enhanced_png_bytes, page=idx + 1)
         timings["ocr_pass1_ms"] += int((time.perf_counter() - t_p1) * 1000)
-        # If perspective-warped/enhanced image yielded nothing, retry once on original PNG
-        if not ocr_out.boxes and prep.enhanced_png_bytes != prep.original_png_bytes:
+        # If perspective-warped/enhanced image yielded nothing (and did not fail/time out),
+        # retry once on original PNG
+        ocr_failed = any(
+            w.startswith("OCR_TIMEOUT") or w.startswith("OCR_ENGINE_ERROR")
+            for w in ocr_out.warnings
+        )
+        if not ocr_out.boxes and not ocr_failed and prep.enhanced_png_bytes != prep.original_png_bytes:
             t_p2 = time.perf_counter()
             ocr_out = provider.recognize_image(prep.original_png_bytes, page=idx + 1)
             timings["ocr_pass2_ms"] += int((time.perf_counter() - t_p2) * 1000)
@@ -395,7 +440,7 @@ async def extract_receipt(
         if (
             vlm.is_available()
             and (quality is None or quality.is_readable)
-            and (not receipt.lines or not receipt.math_reconciled)
+            and _needs_vlm_escalation(receipt)
         ):
             vlm_input_bytes = enhanced_png_bytes
             if vlm_input_bytes is None:
