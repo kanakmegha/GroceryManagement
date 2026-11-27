@@ -24,10 +24,13 @@ from app.infra.ocr.preprocessing import (
     extract_pdf_inputs,
     preprocess_receipt_image,
 )
+from app.core.config import get_settings
 from app.infra.ocr.providers import (
     HuggingFaceVlmProvider,
     LocalVisionOcrProvider,
+    RapidOcrProvider,
     RawOcrOutput,
+    RemoteRapidOcrProvider,
     TesseractOcrProvider,
     TextOcrProvider,
 )
@@ -62,7 +65,26 @@ __all__ = [
 
 
 def _select_local_ocr_provider() -> TextOcrProvider | None:
-    for candidate in (LocalVisionOcrProvider(), TesseractOcrProvider()):
+    mode = get_settings().OCR_PROVIDER
+    if mode == "remote_rapidocr":
+        candidate = RemoteRapidOcrProvider()
+        return candidate if candidate.is_available() else None
+    if mode == "rapidocr":
+        candidate = RapidOcrProvider()
+        return candidate if candidate.is_available() else None
+    if mode == "local_vision":
+        candidate = LocalVisionOcrProvider()
+        return candidate if candidate.is_available() else None
+    if mode == "tesseract":
+        candidate = TesseractOcrProvider()
+        return candidate if candidate.is_available() else None
+
+    for candidate in (
+        RemoteRapidOcrProvider(),
+        RapidOcrProvider(),
+        LocalVisionOcrProvider(),
+        TesseractOcrProvider(),
+    ):
         if candidate.is_available():
             return candidate
     return None
@@ -230,8 +252,13 @@ def _run_local_ocr_on_images_sync(
         t_p1 = time.perf_counter()
         ocr_out: RawOcrOutput = provider.recognize_image(prep.enhanced_png_bytes, page=idx + 1)
         timings["ocr_pass1_ms"] += int((time.perf_counter() - t_p1) * 1000)
-        # If perspective-warped/enhanced image yielded nothing, retry once on original PNG
-        if not ocr_out.boxes and prep.enhanced_png_bytes != prep.original_png_bytes:
+        # If perspective-warped/enhanced image yielded nothing (and did not fail/time out),
+        # retry once on original PNG
+        ocr_failed = any(
+            w.startswith("OCR_TIMEOUT") or w.startswith("OCR_ENGINE_ERROR")
+            for w in ocr_out.warnings
+        )
+        if not ocr_out.boxes and not ocr_failed and prep.enhanced_png_bytes != prep.original_png_bytes:
             t_p2 = time.perf_counter()
             ocr_out = provider.recognize_image(prep.original_png_bytes, page=idx + 1)
             timings["ocr_pass2_ms"] += int((time.perf_counter() - t_p2) * 1000)

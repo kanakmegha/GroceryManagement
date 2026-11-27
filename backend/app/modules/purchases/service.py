@@ -1056,6 +1056,21 @@ async def merge_ocr_into_draft(
     existing_payload = (
         dict(purchase.raw_ocr_payload) if isinstance(purchase.raw_ocr_payload, dict) else {}
     )
+    incoming_warnings = [str(w) for w in (ocr_result.get("warnings") or []) if w]
+    if incoming_warnings:
+        merged_warnings = list(
+            dict.fromkeys([*(existing_payload.get("warnings") or []), *incoming_warnings])
+        )
+        existing_payload["warnings"] = merged_warnings
+    has_ocr_page_failure = any(
+        ("OCR_TIMEOUT" in w or "OCR_ENGINE_ERROR" in w) for w in incoming_warnings
+    )
+    if has_ocr_page_failure:
+        existing_payload["ocr_partial_failure"] = True
+        cur_missing = list(purchase.missing_fields_json or [])
+        if "ocr_partial_failure" not in cur_missing:
+            cur_missing.append("ocr_partial_failure")
+        purchase.missing_fields_json = cur_missing
     existing_review = existing_payload.get("total_review")
     subtotal_is_synthetic = bool(
         isinstance(existing_review, dict) and existing_review.get("subtotal_is_synthetic", False)
@@ -2003,6 +2018,15 @@ async def confirm_purchase(
             message=(
                 "This receipt's purchase total needs review before confirmation. "
                 "Please verify and save the printed total."
+            ),
+        )
+    if "ocr_partial_failure" in (purchase.missing_fields_json or []):
+        raise AppError(
+            status_code=422,
+            code="OCR_PARTIAL_FAILURE_REVIEW_REQUIRED",
+            message=(
+                "One or more receipt pages failed OCR processing. "
+                "Please review or retry the failed page before confirming."
             ),
         )
 
