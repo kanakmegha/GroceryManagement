@@ -10,6 +10,10 @@ import {
   buildRankedIngredientSuggestions,
 } from "./ingredientSuggestions";
 import {
+  convertQuantityAndUnitPrice,
+  formatPurchaseQuantityDisplay,
+} from "./unitConversion";
+import {
   ActivityIndicator,
   Alert,
   AppState,
@@ -360,8 +364,8 @@ export function PurchasesScreen() {
         raw_text: item.raw_text ?? undefined,
         canonical_item_id: item.canonical_item_id,
         display_name: item.display_name || item.raw_text || "",
-        qtyText: String(Number(item.normalized_qty) || 1),
-        unit: item.base_unit,
+        qtyText: String(Number(item.purchase_qty ?? item.normalized_qty) || 1),
+        unit: ((item.purchase_unit as InputUnit | undefined) ?? item.base_unit),
         unitPriceRupeesText: paiseToRupeesString(
           item.unit_price_paise ?? item.line_total_paise ?? 0,
         ),
@@ -718,6 +722,8 @@ export function PurchasesScreen() {
         raw_text: line.raw_text,
         canonical_item_id: matched ? matched.id : line.canonical_item_id,
         display_name: trimmedName,
+        qty: qtyNum,
+        unit: line.unit,
         normalized_qty: normalized.qty,
         base_unit: normalized.baseUnit,
         unit_price_paise: unitPricePaise,
@@ -1296,10 +1302,7 @@ export function PurchasesScreen() {
                                   style={styles.previewItemText}
                                 >
                                   • {item.display_name ?? "Item"} (
-                                  {formatQuantityWithUnit(
-                                    item.normalized_qty,
-                                    item.base_unit,
-                                  )}
+                                  {formatPurchaseQuantityDisplay(item)}
                                   ) —{" "}
                                   {formatInrFromPaise(item.line_total_paise)}
                                 </Text>
@@ -1441,18 +1444,15 @@ export function PurchasesScreen() {
                         )
                         : null}
                       <Text style={styles.cardMeta}>
-                        Qty: {formatQuantityWithUnit(
-                          item.normalized_qty,
-                          item.base_unit,
-                        )} · Unit Price: {formatInrFromPaise(
+                        Qty: {formatPurchaseQuantityDisplay(item)} · Unit Price: {formatInrFromPaise(
                           item.unit_price_paise ?? item.line_total_paise,
                         )} · Line Total:{" "}
                         {formatInrFromPaise(item.line_total_paise)}
                       </Text>
                       <Text style={styles.cardMeta}>
                         Inventory: {item.track_inventory === false
-                          ? "Budget Only (Not Added to Pantry)"
-                          : "Added to Kitchen Inventory"}
+                          ? "Non-pantry item (Excluded from Kitchen Inventory)"
+                          : "Pantry item (Added to Kitchen Inventory)"}
                       </Text>
                     </View>
                   ))}
@@ -2138,81 +2138,81 @@ export function PurchasesScreen() {
                         </View>
                       </View>
 
-                      <Pressable
-                        onPress={() => {
-                          setLines((prev) => {
-                            const updated = toggleBudgetOnlyForLine(
-                              prev,
-                              line.localKey,
-                              !line.budgetOnly,
-                            );
-                            if (!updated.some(isExplicitOutsideFoodLine)) {
-                              setMealType(null);
-                              setDiningMode(null);
-                              setPeopleCountText("");
-                            }
-                            return updated;
-                          });
-                        }}
-                        style={styles.unitChipsRow}
-                        accessibilityRole="switch"
-                        accessibilityState={{ checked: line.budgetOnly }}
-                      >
-                        <Ionicons
-                          name={line.budgetOnly
-                            ? "checkbox-outline"
-                            : "square-outline"}
-                          size={18}
-                          color={colors.primary}
-                        />
-                        <Text style={styles.fieldLabel}>
-                          Budget Only (Prepared Meal / Non-Pantry)
-                        </Text>
-                      </Pressable>
-                      <Pressable
-                        onPress={() => {
-                          setLines((prev) => {
-                            const updated = prev.map((l) =>
-                              l.localKey === line.localKey
-                                ? {
-                                  ...l,
-                                  track_inventory: !l.track_inventory,
-                                  budgetOnly: false,
-                                  classification_status: !l.track_inventory
-                                    ? "pantry_eligible"
-                                    : l.classification_status,
-                                  food_state: !l.track_inventory ? "raw" : l.food_state,
-                                  budget_treatment: !l.track_inventory
-                                    ? "grocery_inventory"
-                                    : l.budget_treatment,
-                                  review_reason: !l.track_inventory ? null : l.review_reason,
-                                  warnings: !l.track_inventory ? [] : l.warnings,
-                                }
-                                : l
-                            );
-                            if (!updated.some(isExplicitOutsideFoodLine)) {
-                              setMealType(null);
-                              setDiningMode(null);
-                              setPeopleCountText("");
-                            }
-                            return updated;
-                          });
-                        }}
-                        style={styles.unitChipsRow}
-                        accessibilityRole="switch"
-                        accessibilityState={{ checked: line.track_inventory }}
-                      >
-                        <Ionicons
-                          name={line.track_inventory
-                            ? "checkbox-outline"
-                            : "square-outline"}
-                          size={18}
-                          color={colors.primary}
-                        />
-                        <Text style={styles.fieldLabel}>
-                          Add to Kitchen Inventory
-                        </Text>
-                      </Pressable>
+                      <View style={styles.unitChipsRow}>
+                        <Pressable
+                          onPress={() => {
+                            setLines((prev) => {
+                              const updated = prev.map((l) =>
+                                l.localKey === line.localKey
+                                  ? {
+                                    ...l,
+                                    track_inventory: true,
+                                    budgetOnly: false,
+                                    classification_status: "pantry_eligible",
+                                    food_state: "raw",
+                                    budget_treatment: "grocery_inventory",
+                                    review_reason: null,
+                                    warnings: [],
+                                  }
+                                  : l
+                              );
+                              if (!updated.some(isExplicitOutsideFoodLine)) {
+                                setMealType(null);
+                                setDiningMode(null);
+                                setPeopleCountText("");
+                              }
+                              return updated;
+                            });
+                          }}
+                          style={[
+                            styles.unitChip,
+                            line.track_inventory && !line.budgetOnly && styles.confidenceHigh,
+                          ]}
+                          accessibilityRole="radio"
+                          accessibilityState={{
+                            selected: line.track_inventory && !line.budgetOnly,
+                          }}
+                        >
+                          <Text style={styles.unitChipText}>Pantry item</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => {
+                            setLines((prev) => {
+                              const updated = prev.map((l) =>
+                                l.localKey === line.localKey
+                                  ? {
+                                    ...l,
+                                    track_inventory: false,
+                                    budgetOnly: true,
+                                    ingredient_confidence_tier: "NON_PANTRY",
+                                    ingredient_review_reason: null,
+                                    budget_treatment:
+                                      l.budget_treatment === "outside_food_meal"
+                                        ? "outside_food_meal"
+                                        : "household_non_food",
+                                  }
+                                  : l
+                              );
+                              if (!updated.some(isExplicitOutsideFoodLine)) {
+                                setMealType(null);
+                                setDiningMode(null);
+                                setPeopleCountText("");
+                              }
+                              return updated;
+                            });
+                          }}
+                          style={[
+                            styles.unitChip,
+                            (!line.track_inventory || line.budgetOnly) && styles.confidenceNeutral,
+                          ]}
+                          accessibilityRole="radio"
+                          accessibilityState={{
+                            selected: !line.track_inventory || line.budgetOnly,
+                          }}
+                        >
+                          <Text style={styles.unitChipText}>Non-pantry item</Text>
+                        </Pressable>
+                      </View>
                       {line.classification_status ? (
                         <View style={{ marginBottom: spacing.xs }}>
                           <Text style={styles.fieldLabel}>
@@ -2241,7 +2241,16 @@ export function PurchasesScreen() {
                             <Pressable
                               key={unitOpt}
                               onPress={() =>
-                                updateLine(line.localKey, { unit: unitOpt })}
+                                updateLine(
+                                  line.localKey,
+                                  convertQuantityAndUnitPrice({
+                                    qtyText: line.qtyText,
+                                    unitPriceRupeesText: line.unitPriceRupeesText,
+                                    lineTotalRupeesText: line.lineTotalRupeesText,
+                                    fromUnit: line.unit,
+                                    toUnit: unitOpt,
+                                  }),
+                                )}
                               style={[
                                 styles.unitChip,
                                 selected && styles.unitChipSelected,

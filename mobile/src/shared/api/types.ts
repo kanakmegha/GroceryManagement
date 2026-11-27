@@ -73,6 +73,8 @@ export interface PurchaseDraftItem {
   line_total_paise: number;
   discount_paise?: number;
   tax_paise?: number;
+  purchase_qty?: number | null;
+  purchase_unit?: string | null;
   tax_rate_bps?: number | null;
   confidence?: number | null;
   warnings?: string[];
@@ -176,12 +178,16 @@ export interface PurchaseDraftItemUpdateInput {
   raw_text?: string;
   canonical_item_id: string | null;
   display_name?: string;
+  qty?: number;
+  unit?: string;
   normalized_qty: string;
   base_unit: BaseUnit;
   unit_price_paise?: number;
   line_total_paise: number;
   discount_paise?: number;
   tax_paise?: number;
+  purchase_qty?: number | null;
+  purchase_unit?: string | null;
   track_inventory?: boolean;
   classification_status?: 'pantry_eligible' | 'prepared_meal' | 'non_food' | 'ambiguous_review' | string;
   food_state?: string | null;
@@ -229,6 +235,8 @@ export interface PurchaseDraftUpdateRequest {
   igst_paise?: number;
   other_tax_paise?: number;
   tax_paise?: number;
+  purchase_qty?: number | null;
+  purchase_unit?: string | null;
   rounding_paise?: number;
   total_amount_paise?: number;
   items: PurchaseDraftItemUpdateInput[];
@@ -245,6 +253,8 @@ export interface PurchaseDraftCreateRequest {
   sgst_paise?: number;
   igst_paise?: number;
   tax_paise?: number;
+  purchase_qty?: number | null;
+  purchase_unit?: string | null;
   rounding_paise?: number;
   total_amount_paise?: number;
   items: PurchaseDraftItemUpdateInput[];

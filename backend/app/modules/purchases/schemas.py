@@ -166,6 +166,8 @@ class PurchaseItemOut(BaseModel):
     unit_price_provenance: str | None = None
     normalized_qty: Decimal
     base_unit: str
+    purchase_qty: float | None = None
+    purchase_unit: str | None = None
     unit_price_paise: int
     line_total_paise: int
     discount_paise: int = 0

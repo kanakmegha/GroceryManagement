@@ -788,9 +788,11 @@ async def _build_ocr_purchase_items(
         explicit_unit_price_paise = _extract_attr(raw_item, "unit_price_paise")
         unit_price_paise = explicit_unit_price_paise
         if unit_price_paise is None:
-            qty_float = float(norm_qty)
+            commercial_qty = float(raw_qty) if raw_qty and float(raw_qty) > 0 else float(norm_qty)
             unit_price_paise = (
-                round(line_total_paise / qty_float) if qty_float > 0 else line_total_paise
+                round(line_total_paise / commercial_qty)
+                if commercial_qty > 0
+                else line_total_paise
             )
 
         raw_exp = _extract_attr(raw_item, "expires_on")
@@ -918,7 +920,11 @@ async def _build_ocr_purchase_items(
             classification_confidence=Decimal(str(round(cls_res.confidence, 3))),
             matching_method=cls_res.matching_method,
             resolution_score=draft_res.raw_confidence_decimal,
-            resolution_metadata_json=draft_res.to_metadata_dict(),
+            resolution_metadata_json={
+                **draft_res.to_metadata_dict(),
+                "purchase_qty": float(raw_qty),
+                "purchase_unit": str(raw_unit).strip().lower(),
+            },
             classification_source=cls_res.source,
             expires_on=expires_on,
         )
@@ -1386,7 +1392,11 @@ async def create_manual_draft(
             classification_confidence=Decimal(str(round(cls_res.confidence, 3))),
             matching_method=cls_res.matching_method,
             resolution_score=draft_res.raw_confidence_decimal,
-            resolution_metadata_json=draft_res.to_metadata_dict(),
+            resolution_metadata_json={
+                **draft_res.to_metadata_dict(),
+                "purchase_qty": float(raw_qty),
+                "purchase_unit": str(raw_unit).strip().lower(),
+            },
             classification_source=cls_res.source,
             expires_on=item_in.expires_on,
         )
@@ -1455,6 +1465,13 @@ def _serialize_purchase(purchase: Purchase) -> PurchaseOut:
             sup_units = meta.get("supported_units")
             if isinstance(sup_units, list):
                 item_out.supported_units = [str(u) for u in sup_units]
+            raw_pq = meta.get("purchase_qty")
+            raw_pu = meta.get("purchase_unit")
+            item_out.purchase_qty = float(raw_pq) if raw_pq is not None else None
+            item_out.purchase_unit = str(raw_pu) if raw_pu else None
+        else:
+            item_out.purchase_qty = None
+            item_out.purchase_unit = None
     payload = purchase.raw_ocr_payload
     if isinstance(payload, dict):
         warnings = payload.get("warnings")
@@ -1594,8 +1611,8 @@ async def update_draft(
 
         total_paise = 0
         for idx, item_in in enumerate(payload.items):
-            raw_qty = item_in.normalized_qty if item_in.normalized_qty is not None else item_in.qty
-            raw_unit = item_in.base_unit or item_in.unit
+            raw_qty = item_in.qty if item_in.qty is not None else item_in.normalized_qty
+            raw_unit = item_in.unit or item_in.base_unit
             if raw_qty is None or raw_unit is None:
                 raise AppError(
                     status_code=422,
@@ -1808,7 +1825,11 @@ async def update_draft(
                 classification_confidence=Decimal(str(round(cls_res.confidence, 3))),
                 matching_method=cls_res.matching_method,
                 resolution_score=draft_res.raw_confidence_decimal,
-                resolution_metadata_json=draft_res.to_metadata_dict(),
+                resolution_metadata_json={
+                **draft_res.to_metadata_dict(),
+                "purchase_qty": float(raw_qty),
+                "purchase_unit": str(raw_unit).strip().lower(),
+            },
                 classification_source=safe_source,
                 expires_on=item_in.expires_on,
             )
