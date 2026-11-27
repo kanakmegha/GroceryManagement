@@ -6,6 +6,10 @@ import React, {
   useState,
 } from "react";
 import {
+  buildExplicitSelectionPatch,
+  buildRankedIngredientSuggestions,
+} from "./ingredientSuggestions";
+import {
   ActivityIndicator,
   Alert,
   AppState,
@@ -1885,6 +1889,57 @@ export function PurchasesScreen() {
                         </Text>
                       ) : null}
 
+                      {line.track_inventory && !line.budgetOnly ? (() => {
+                        const inlineSuggestions = buildRankedIngredientSuggestions({
+                          query: line.display_name,
+                          backendSuggestions: line.ingredient_suggestions,
+                          catalog: ingredientCatalog,
+                          limit: 4,
+                        });
+                        if (inlineSuggestions.length === 0) return null;
+                        return (
+                          <View style={styles.unitChipsRow}>
+                            {inlineSuggestions.map((sug) => {
+                              const isSelected =
+                                line.user_approved_ingredient &&
+                                ((sug.canonical_ingredient_id &&
+                                  line.canonical_ingredient_id ===
+                                    sug.canonical_ingredient_id) ||
+                                  (sug.variant_id &&
+                                    line.ingredient_variant_id === sug.variant_id));
+                              return (
+                                <Pressable
+                                  key={sug.key}
+                                  onPress={() => {
+                                    updateLine(
+                                      line.localKey,
+                                      buildExplicitSelectionPatch(sug),
+                                    );
+                                    setActivePickerLineKey(null);
+                                  }}
+                                  style={[
+                                    styles.unitChip,
+                                    isSelected && styles.confidenceHigh,
+                                  ]}
+                                  accessibilityRole="button"
+                                  accessibilityLabel={`Select ${sug.label}${
+                                    sug.isBestMatch ? " (Best match)" : ""
+                                  }`}
+                                >
+                                  <Text style={styles.unitChipText}>
+                                    {sug.isBestMatch ? "★ " : ""}
+                                    {sug.label}
+                                    {sug.family_name || sug.category
+                                      ? ` · ${sug.family_name || sug.category}`
+                                      : ""}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
+                        );
+                      })() : null}
+
                       {line.track_inventory && !line.budgetOnly ? (
                         <View style={styles.ingredientActionRow}>
                           {!line.user_approved_ingredient &&
@@ -1918,12 +1973,12 @@ export function PurchasesScreen() {
                             }}
                             style={styles.quickActionChip}
                             accessibilityRole="button"
-                            accessibilityLabel={`Choose ingredient for item ${idx + 1}`}
+                            accessibilityLabel={`Browse all ingredients for item ${idx + 1}`}
                           >
                             <Text style={styles.quickActionChipText}>
                               {activePickerLineKey === line.localKey
                                 ? "Close List"
-                                : "Choose Ingredient"}
+                                : "Browse all ingredients"}
                             </Text>
                           </Pressable>
                           <Pressable
@@ -1955,7 +2010,9 @@ export function PurchasesScreen() {
                                   key={sug.variant_id}
                                   onPress={() => {
                                     updateLine(line.localKey, {
-                                      display_name: sug.variant_name,
+                                      display_name: line.display_name.trim()
+                                        ? line.display_name
+                                        : sug.variant_name,
                                       standardized_name: sug.variant_name,
                                       ingredient_family_name: sug.family_name,
                                       ingredient_variant_id: sug.variant_id,
@@ -1999,7 +2056,9 @@ export function PurchasesScreen() {
                                 key={opt.id}
                                 onPress={() => {
                                   updateLine(line.localKey, {
-                                    display_name: opt.name,
+                                    display_name: line.display_name.trim()
+                                      ? line.display_name
+                                      : opt.name,
                                     standardized_name: opt.name,
                                     canonical_ingredient_id: opt.id,
                                     ingredient_category: opt.category,

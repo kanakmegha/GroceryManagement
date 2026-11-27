@@ -1773,16 +1773,7 @@ async def update_draft(
                 line_index=idx,
                 raw_text=preserved_raw,
                 canonical_item_id=resolved_canonical_id,
-                display_name=(
-                    draft_res.standardized_name
-                    if draft_res.standardized_name
-                    and (
-                        effective_user_approved
-                        or item_in.canonical_ingredient_id is not None
-                        or item_in.ingredient_variant_id is not None
-                    )
-                    else item_in.display_name.strip()
-                ),
+                display_name=item_in.display_name.strip(),
                 normalized_name=(
                     item_in.normalized_name
                     or (prev_item.normalized_name if prev_item else None)
