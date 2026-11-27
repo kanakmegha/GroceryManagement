@@ -197,14 +197,39 @@ def _is_total_review_required(purchase: Purchase) -> bool:
     return "total_amount" in missing
 
 
-def _mark_total_review_verified(purchase: Purchase) -> None:
-    """Clear persisted total review state only after explicit user total submission."""
+def _mark_total_review_verified(
+    purchase: Purchase,
+    *,
+    calculated_total_paise: int | None = None,
+    discrepancy_paise: int = 0,
+) -> None:
+    """Clear persisted total review state and stale total-mismatch warnings."""
     payload = dict(purchase.raw_ocr_payload) if isinstance(purchase.raw_ocr_payload, dict) else {}
     existing_review = payload.get("total_review")
-    if isinstance(existing_review, dict):
-        payload["total_review"] = {**existing_review, "status": "verified"}
-    else:
-        payload["total_review"] = {"status": "verified"}
+    review_update: dict[str, Any] = {
+        **(existing_review if isinstance(existing_review, dict) else {}),
+        "status": "verified",
+        "reason": None,
+        "discrepancy_paise": discrepancy_paise,
+    }
+    if calculated_total_paise is not None:
+        review_update["calculated_total_paise"] = calculated_total_paise
+    payload["total_review"] = review_update
+
+    # Clear stale total-mismatch warnings and validation issues
+    if isinstance(payload.get("warnings"), list):
+        payload["warnings"] = [
+            w
+            for w in payload["warnings"]
+            if "total" not in str(w).lower()
+            or ("mismatch" not in str(w).lower() and "differs" not in str(w).lower())
+        ]
+    if isinstance(payload.get("validation_issues"), list):
+        payload["validation_issues"] = [
+            iss
+            for iss in payload["validation_issues"]
+            if not (isinstance(iss, dict) and iss.get("field") == "total_amount")
+        ]
     purchase.raw_ocr_payload = payload
     missing = [
         f
@@ -1853,7 +1878,53 @@ async def update_draft(
             candidate_total, source="purchase"
         )
         if payload.total_amount_paise is not None:
-            _mark_total_review_verified(purchase)
+            _mark_total_review_verified(
+                purchase,
+                calculated_total_paise=total_paise,
+                discrepancy_paise=abs(payload.total_amount_paise - total_paise),
+            )
+        else:
+            existing_payload = (
+                dict(purchase.raw_ocr_payload)
+                if isinstance(purchase.raw_ocr_payload, dict)
+                else {}
+            )
+            existing_review = existing_payload.get("total_review")
+            existing_explicit = (
+                existing_review.get("explicit_total_paise")
+                if isinstance(existing_review, dict)
+                else None
+            )
+            if existing_explicit is not None:
+                reconciliation = reconcile_ocr_purchase_total(
+                    explicit_total_paise=int(existing_explicit),
+                    subtotal_paise=purchase.subtotal_paise,
+                    line_items_sum_paise=total_paise,
+                    discount_paise=purchase.discount_paise,
+                    additional_charges_paise=purchase.additional_charges_paise,
+                    tax_paise=purchase.tax_paise,
+                    rounding_paise=purchase.rounding_paise,
+                )
+                if not reconciliation.needs_review:
+                    _mark_total_review_verified(
+                        purchase,
+                        calculated_total_paise=reconciliation.calculated_total_paise,
+                        discrepancy_paise=reconciliation.discrepancy_paise,
+                    )
+                else:
+                    existing_payload["total_review"] = {
+                        **(existing_review if isinstance(existing_review, dict) else {}),
+                        "status": "needs_review",
+                        "reason": reconciliation.review_reason,
+                        "explicit_total_paise": reconciliation.explicit_total_paise,
+                        "calculated_total_paise": reconciliation.calculated_total_paise,
+                        "discrepancy_paise": reconciliation.discrepancy_paise,
+                    }
+                    purchase.raw_ocr_payload = existing_payload
+                    cur_missing = list(purchase.missing_fields_json or [])
+                    if "total_amount" not in cur_missing:
+                        cur_missing.append("total_amount")
+                    purchase.missing_fields_json = cur_missing
     elif payload.total_amount_paise is not None:
         if payload.total_amount_paise < 0:
             await db.rollback()
