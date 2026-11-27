@@ -11,11 +11,14 @@ from uuid import uuid4
 
 from app.core.config import Settings
 from app.core.errors import AppError
+from app.core.logging import get_logger
 from app.modules.experimental_ocr.provider import ExperimentalV10_6ExtractionProvider
 from app.modules.experimental_ocr.schemas import (
     ExperimentalExtractionResult,
     OcrOrchestrationMetadata,
 )
+
+logger = get_logger(__name__)
 
 
 def _to_paise(val: float | None) -> int:
@@ -251,6 +254,12 @@ async def orchestrate_receipt_extraction(
             raw_text=raw_text,
         )
     except Exception as exc:
+        logger.exception(
+            "Fallback OCR failed (primary=%s, fallback_reason=%s): %s",
+            primary_status,
+            fallback_reason,
+            type(exc).__name__,
+        )
         raise AppError(
             status_code=502,
             code="ALL_PROVIDERS_FAILED",
